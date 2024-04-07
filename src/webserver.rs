@@ -1,5 +1,6 @@
 use std::time::Duration;
 use axum::{response::IntoResponse, response::Html, extract::Path, Router, routing::get};
+use plotters::style::full_palette::{BLUE_600, BROWN, GREEN_800, GREY, LIGHTBLUE_300, PINK_A100, PURPLE, RED_900};
 use tokio::time::sleep;
 use std::io::Cursor;
 use anyhow::Result;
@@ -123,16 +124,111 @@ pub fn wait_event_type_plot(
         .draw()
         .unwrap();
 
-    let min_on_cpu = wait_event_type.iter().map(|(_,w)| w.on_cpu).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-    let max_on_cpu = wait_event_type.iter().map(|(_,w)| w.on_cpu).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-
+    // This is a dummy plot for the sole intention to write a header in the legend.
+    contextarea.draw_series(LineSeries::new(wait_event_type
+            .iter()
+            .take(1)
+            .map(|(timestamp,w)| (*timestamp, w.on_cpu as f64)), ShapeStyle { color: TRANSPARENT, filled: false, stroke_width: 1} ))
+        .unwrap()
+        .label(format!("{:25} {:>10} {:>10} {:>10}", "", "min", "max", "last"));
+    // 
+    let min_activity = wait_event_type.iter().map(|(_,w)| w.activity).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_activity = wait_event_type.iter().map(|(_,w)| w.activity).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
     contextarea.draw_series(AreaSeries::new(
         wait_event_type.iter()
-                .map(|(timestamp, w)| (*timestamp, w.on_cpu as f64)), 0.0, GREEN))
-            .unwrap()
-        //.label(format!("{:25} {:10.2} {:10.2}, {:10.2}", "on cpu", min_on_cpu, max_on_cpu, wait_event_type.back().unwrap().on_cpu))
-        .label(format!("{:25} {:10.2} {:10.2}, {:10.2}", "on cpu", min_on_cpu, max_on_cpu, 0))
+            .map(|(timestamp, w)| (*timestamp, (w.on_cpu + w.io + w.lock + w.lwlock + w.ipc + w.timeout + w.extension + w.client + w.buffer_pin + w.activity) as f64)), 0.0, PURPLE))
+        .unwrap()
+        .label(format!("{:25} {:10} {:10} {:10}", "Activity", min_activity, max_activity, wait_event_type.back().map_or(0, |(_,r)| r.activity )))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PURPLE.filled()));
+    // 
+    let min_buffer_pin = wait_event_type.iter().map(|(_,w)| w.buffer_pin).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_buffer_pin = wait_event_type.iter().map(|(_,w)| w.buffer_pin).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    contextarea.draw_series(AreaSeries::new(
+        wait_event_type.iter()
+            .map(|(timestamp, w)| (*timestamp, (w.on_cpu + w.io + w.lock + w.lwlock + w.ipc + w.timeout + w.extension + w.client + w.buffer_pin) as f64)), 0.0, LIGHTBLUE_300))
+        .unwrap()
+        .label(format!("{:25} {:10} {:10} {:10}", "Buffer Pin", min_buffer_pin, max_buffer_pin, wait_event_type.back().map_or(0, |(_,r)| r.buffer_pin )))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], LIGHTBLUE_300.filled()));
+    // 
+    let min_client = wait_event_type.iter().map(|(_,w)| w.client).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_client = wait_event_type.iter().map(|(_,w)| w.client).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    contextarea.draw_series(AreaSeries::new(
+        wait_event_type.iter()
+            .map(|(timestamp, w)| (*timestamp, (w.on_cpu + w.io + w.lock + w.lwlock + w.ipc + w.timeout + w.extension + w.client) as f64)), 0.0, GREY))
+        .unwrap()
+        .label(format!("{:25} {:10} {:10} {:10}", "Client", min_client, max_client, wait_event_type.back().map_or(0, |(_,r)| r.client )))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREY.filled()));
+    // 
+    let min_extension = wait_event_type.iter().map(|(_,w)| w.extension).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_extension = wait_event_type.iter().map(|(_,w)| w.extension).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    contextarea.draw_series(AreaSeries::new(
+        wait_event_type.iter()
+            .map(|(timestamp, w)| (*timestamp, (w.on_cpu + w.io + w.lock + w.lwlock + w.ipc + w.timeout + w.extension) as f64)), 0.0, GREEN_800))
+        .unwrap()
+        .label(format!("{:25} {:10} {:10} {:10}", "Extension", min_extension, max_extension, wait_event_type.back().map_or(0, |(_,r)| r.extension )))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN_800.filled()));
+    // 
+    let min_timeout = wait_event_type.iter().map(|(_,w)| w.timeout).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_timeout = wait_event_type.iter().map(|(_,w)| w.timeout).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    contextarea.draw_series(AreaSeries::new(
+        wait_event_type.iter()
+            .map(|(timestamp, w)| (*timestamp, (w.on_cpu + w.io + w.lock + w.lwlock + w.ipc + w.timeout) as f64)), 0.0, BROWN))
+        .unwrap()
+        .label(format!("{:25} {:10} {:10} {:10}", "Timeout", min_timeout, max_timeout, wait_event_type.back().map_or(0, |(_,r)| r.timeout )))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BROWN.filled()));
+    // 
+    let min_ipc = wait_event_type.iter().map(|(_,w)| w.ipc).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_ipc = wait_event_type.iter().map(|(_,w)| w.ipc).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    contextarea.draw_series(AreaSeries::new(
+        wait_event_type.iter()
+            .map(|(timestamp, w)| (*timestamp, (w.on_cpu + w.io + w.lock + w.lwlock + w.ipc) as f64)), 0.0, PINK_A100))
+        .unwrap()
+        .label(format!("{:25} {:10} {:10} {:10}", "IPC", min_ipc, max_ipc, wait_event_type.back().map_or(0, |(_,r)| r.ipc )))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PINK_A100.filled()));
+    // 
+    let min_lwlock = wait_event_type.iter().map(|(_,w)| w.lwlock).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_lwlock = wait_event_type.iter().map(|(_,w)| w.lwlock).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    contextarea.draw_series(AreaSeries::new(
+        wait_event_type.iter()
+            .map(|(timestamp, w)| (*timestamp, (w.on_cpu + w.io + w.lock + w.lwlock) as f64)), 0.0, RED_900))
+        .unwrap()
+        .label(format!("{:25} {:10} {:10} {:10}", "LWLock", min_lwlock, max_lwlock, wait_event_type.back().map_or(0, |(_,r)| r.lwlock )))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED_900.filled()));
+    // 
+    let min_lock = wait_event_type.iter().map(|(_,w)| w.lock).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_lock = wait_event_type.iter().map(|(_,w)| w.lock).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    contextarea.draw_series(AreaSeries::new(
+        wait_event_type.iter()
+            .map(|(timestamp, w)| (*timestamp, (w.on_cpu + w.io + w.lock) as f64)), 0.0, RED))
+        .unwrap()
+        .label(format!("{:25} {:10} {:10} {:10}", "Lock", min_lock, max_lock, wait_event_type.back().map_or(0, |(_,r)| r.lock )))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()));
+    // 
+    let min_io = wait_event_type.iter().map(|(_,w)| w.io).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_io = wait_event_type.iter().map(|(_,w)| w.io).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    contextarea.draw_series(AreaSeries::new(
+        wait_event_type.iter()
+            .map(|(timestamp, w)| (*timestamp, (w.on_cpu + w.io) as f64)), 0.0, BLUE_600))
+        .unwrap()
+        .label(format!("{:25} {:10} {:10} {:10}", "IO", min_io, max_io, wait_event_type.back().map_or(0, |(_,r)| r.io )))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE_600.filled()));
+    // 
+    let min_on_cpu = wait_event_type.iter().map(|(_,w)| w.on_cpu).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_on_cpu = wait_event_type.iter().map(|(_,w)| w.on_cpu).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    contextarea.draw_series(AreaSeries::new(
+        wait_event_type.iter()
+            .map(|(timestamp, w)| (*timestamp, w.on_cpu as f64)), 0.0, GREEN))
+        .unwrap()
+        .label(format!("{:25} {:10} {:10} {:10}", "On CPU", min_on_cpu, max_on_cpu, wait_event_type.back().map_or(0, |(_,r)| r.on_cpu )))
         .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
+
+    contextarea.configure_series_labels()
+        .border_style(BLACK)
+        .background_style(WHITE.mix(0.7))
+        .label_font((LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE))
+        .position(UpperLeft)
+        .draw()
+        .unwrap();
 
 
 }

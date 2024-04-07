@@ -1,5 +1,4 @@
 use anyhow::Result;
-use pas::DATA;
 //use sqlx::{FromRow, postgres::{types::PgInterval, PgConnection}, Connection};
 //use chrono::{DateTime, Duration, Utc};
 use std::time::Duration;
@@ -159,5 +158,5 @@ async fn main() -> Result<()> {
         //println!("{:?}", DATA.wait_event_types.read().await)
     }
 
-    Ok(())
+    //Ok(())
 }

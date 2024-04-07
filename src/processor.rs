@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::time::{self, MissedTickBehavior};
 use anyhow::Result;
 use sqlx::{query_as, Pool, FromRow, postgres::{types::PgInterval, PgPoolOptions}};
-use chrono::{DateTime, Local};
+use chrono::Local;
 
 #[derive(Debug, FromRow, Clone)]
 pub struct PgStatActivity {
