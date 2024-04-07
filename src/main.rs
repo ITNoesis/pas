@@ -1,8 +1,10 @@
 use anyhow::Result;
-use sqlx::{FromRow, postgres::{types::PgInterval, PgConnection}, Connection};
+use pas::DATA;
+//use sqlx::{FromRow, postgres::{types::PgInterval, PgConnection}, Connection};
 //use chrono::{DateTime, Duration, Utc};
 use std::time::Duration;
 
+/*
 use crossterm::{
     event::{self, KeyCode, KeyEventKind},
     terminal::{
@@ -15,28 +17,17 @@ use ratatui::{
     prelude::{CrosstermBackend, Stylize, Terminal, Text, Constraint}, style::{Color, Style}, widgets::{Paragraph, Cell, Row, Table}
 };
 use std::io::stdout;
-use tokio::time::{self, MissedTickBehavior};
+*/
 
-
-#[derive(Debug, FromRow)]
-struct PgStatActivity {
-    pid: i32,
-    datname: Option<String>,
-    usename: Option<String>,
-    application_name: Option<String>,
-    query_time: Option<PgInterval>, 
-    state_time: Option<PgInterval>, 
-    state: Option<String>,
-    wait_event_type: Option<String>,
-    wait_event: Option<String>,
-    backend_type: Option<String>,
-    query_id: Option<String>,
-    query: Option<String>,
-}
+use std::process;
+use pas::processor::processor_main;
+use pas::webserver::webserver;
+use tokio::time;
 
 #[tokio::main]
 async fn main() -> Result<()> {
 
+    /*
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
@@ -140,6 +131,33 @@ async fn main() -> Result<()> {
     ////
     stdout().execute(LeaveAlternateScreen)?;
     disable_raw_mode()?;
+    */
+    tokio::spawn( async move {
+        match processor_main().await {
+            Ok(_) => {},
+            Err(error) => {
+                eprintln!("{:?}", error);
+                process::exit(1);
+            }
+        }
+    });
+
+    tokio::spawn( async move {
+        match webserver().await {
+            Ok(_) => {},
+            Err(error) => {
+                eprintln!("{:?}", error);
+                process::exit(1);
+            }
+        }
+    });
+
+    let mut interval = time::interval(Duration::from_secs(1));
+    //for _ in 0..10 {
+    loop {
+        interval.tick().await;
+        //println!("{:?}", DATA.wait_event_types.read().await)
+    }
 
     Ok(())
 }

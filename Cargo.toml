@@ -7,8 +7,15 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.81"
+axum = "0.7.5"
+bounded-vec-deque = "0.1.1"
 chrono = { version = "0.4.37", features = ["serde"] }
+clap = { version = "4.5.4", features = ["derive"] }
 crossterm = "0.27.0"
+futures = "0.3.30"
+image = "0.25.1"
+once_cell = "1.19.0"
+plotters = "0.3.5"
 ratatui = "0.26.1"
 sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "postgres", "macros", "chrono"] }
 tokio = { version = "1.37.0", features = ["full"] }
