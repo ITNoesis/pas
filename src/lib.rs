@@ -1,16 +1,20 @@
+use std::ops::Bound;
+
 //use clap::{Parser, ValueEnum};
+use bounded_vec_deque::BoundedVecDeque;
 use clap::Parser;
 use once_cell::sync::Lazy;
-use bounded_vec_deque::BoundedVecDeque;
 //use std::sync::RwLock;
-use tokio::sync::RwLock;
 use chrono::{DateTime, Local};
+use tokio::sync::RwLock;
 
 pub mod processor;
 pub mod webserver;
 
-use processor::PgStatActivity;
 use processor::PgCurrentWaitTypes;
+use processor::PgStatActivity;
+
+use crate::processor::{PgDatabaseXidLimits, PgStatBgWriterSum, PgStatDatabaseSum, PgStatWalSum};
 
 static LABEL_AREA_SIZE_LEFT: i32 = 100;
 static LABEL_AREA_SIZE_RIGHT: i32 = 100;
@@ -29,25 +33,49 @@ pub struct Opts {
     #[arg(short = 'i', long, value_name = "time (s)", default_value = "1")]
     pub interval: u64,
     /// History
-    #[arg(short = 'n', long, value_name = "nr statistics", default_value = "10800")]
+    #[arg(
+        short = 'n',
+        long,
+        value_name = "nr statistics",
+        default_value = "10800"
+    )]
     pub history: usize,
     /// Webserver port
-    #[arg(short = 'P', long, value_name = "webserver port", default_value = "1112")]
+    #[arg(
+        short = 'P',
+        long,
+        value_name = "webserver port",
+        default_value = "1112"
+    )]
     pub webserver_port: u64,
-        /// graph buffer width
-    #[arg(short = 'W', long, value_name = "graph buffer width", default_value = "1800")]
+    /// graph buffer width
+    #[arg(
+        short = 'W',
+        long,
+        value_name = "graph buffer width",
+        default_value = "1800"
+    )]
     pub graph_width: u32,
     /// graph buffer heighth
-    #[arg(short = 'H', long, value_name = "graph buffer height", default_value = "1200")]
+    #[arg(
+        short = 'H',
+        long,
+        value_name = "graph buffer height",
+        default_value = "1200"
+    )]
     pub graph_height: u32,
 }
 
-pub static ARGS: Lazy<Opts> = Lazy::new(|| { Opts::parse() });
+pub static ARGS: Lazy<Opts> = Lazy::new(|| Opts::parse());
 
 #[derive(Debug)]
 pub struct Data {
     pub pg_stat_activity: RwLock<BoundedVecDeque<(DateTime<Local>, Vec<PgStatActivity>)>>,
     pub wait_event_types: RwLock<BoundedVecDeque<(DateTime<Local>, PgCurrentWaitTypes)>>,
+    pub pg_stat_database_sum: RwLock<BoundedVecDeque<(DateTime<Local>, PgStatDatabaseSum)>>,
+    pub pg_stat_bgwriter_sum: RwLock<BoundedVecDeque<(DateTime<Local>, PgStatBgWriterSum)>>,
+    pub pg_stat_wal_sum: RwLock<BoundedVecDeque<(DateTime<Local>, PgStatWalSum)>>,
+    pub pg_database_xid_limits: RwLock<BoundedVecDeque<(DateTime<Local>, PgDatabaseXidLimits)>>,
 }
 
 impl Data {
@@ -55,8 +83,12 @@ impl Data {
         Data {
             pg_stat_activity: RwLock::new(BoundedVecDeque::new(history)),
             wait_event_types: RwLock::new(BoundedVecDeque::new(history)),
+            pg_stat_database_sum: RwLock::new(BoundedVecDeque::new(history)),
+            pg_stat_bgwriter_sum: RwLock::new(BoundedVecDeque::new(history)),
+            pg_stat_wal_sum: RwLock::new(BoundedVecDeque::new(history)),
+            pg_database_xid_limits: RwLock::new(BoundedVecDeque::new(history)),
         }
     }
 }
 
-pub static DATA: Lazy<Data> = Lazy::new(|| { Data::new(Opts::parse().history) });
+pub static DATA: Lazy<Data> = Lazy::new(|| Data::new(Opts::parse().history));
