@@ -46,13 +46,22 @@ pub async fn root_handler() -> Html<String> {
             sleep(Duration::from_secs(1)).await;
         }
     }
+
+    //    .container {{ }}
+
     r##"<!doctype html>
  <html>
    <head>
    <style>
-    .container {{ }}
-    .column_left {{ width: 10%; float:left; }}
-    .column_right {{ width: 90%; height: 3000px; float:right; }}
+    .column_left{ 
+        width: 10%; 
+        float:left; 
+    }
+    .column_right{ 
+        width: 90%; 
+        height: 3000px; 
+        float:right; 
+    }
    </style>
   </head>
   <body>
@@ -136,7 +145,7 @@ pub fn wait_event_type_plot(
         })
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap();
-    let high_value_f64 = high_value as f64;
+    let high_value_f64 = high_value as f64 * 1.1;
 
     multi_backend[backend_number].fill(&WHITE).unwrap();
     let mut contextarea = ChartBuilder::on(&multi_backend[backend_number])

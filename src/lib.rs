@@ -1,5 +1,3 @@
-use std::ops::Bound;
-
 //use clap::{Parser, ValueEnum};
 use bounded_vec_deque::BoundedVecDeque;
 use clap::Parser;
@@ -13,8 +11,13 @@ pub mod webserver;
 
 use processor::PgCurrentWaitTypes;
 use processor::PgStatActivity;
+use processor::PgWaitTypeActivity;
 
-use crate::processor::{PgDatabaseXidLimits, PgStatBgWriterSum, PgStatDatabaseSum, PgStatWalSum};
+use crate::processor::{
+    PgDatabaseXidLimits, PgStatBgWriterSum, PgStatDatabaseSum, PgStatWalSum, PgWaitTypeBufferPin,
+    PgWaitTypeClient, PgWaitTypeExtension, PgWaitTypeIO, PgWaitTypeIPC, PgWaitTypeLWLock,
+    PgWaitTypeLock, PgWaitTypeTimeout,
+};
 
 static LABEL_AREA_SIZE_LEFT: i32 = 100;
 static LABEL_AREA_SIZE_RIGHT: i32 = 100;
@@ -66,12 +69,21 @@ pub struct Opts {
     pub graph_height: u32,
 }
 
-pub static ARGS: Lazy<Opts> = Lazy::new(|| Opts::parse());
+pub static ARGS: Lazy<Opts> = Lazy::new(Opts::parse);
 
 #[derive(Debug)]
 pub struct Data {
     pub pg_stat_activity: RwLock<BoundedVecDeque<(DateTime<Local>, Vec<PgStatActivity>)>>,
     pub wait_event_types: RwLock<BoundedVecDeque<(DateTime<Local>, PgCurrentWaitTypes)>>,
+    pub wait_event_activity: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeActivity)>>,
+    pub wait_event_bufferpin: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeBufferPin)>>,
+    pub wait_event_client: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeClient)>>,
+    pub wait_event_extension: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeExtension)>>,
+    pub wait_event_io: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeIO)>>,
+    pub wait_event_ipc: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeIPC)>>,
+    pub wait_event_lock: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeLock)>>,
+    pub wait_event_lwlock: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeLWLock)>>,
+    pub wait_event_timeout: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeTimeout)>>,
     pub pg_stat_database_sum: RwLock<BoundedVecDeque<(DateTime<Local>, PgStatDatabaseSum)>>,
     pub pg_stat_bgwriter_sum: RwLock<BoundedVecDeque<(DateTime<Local>, PgStatBgWriterSum)>>,
     pub pg_stat_wal_sum: RwLock<BoundedVecDeque<(DateTime<Local>, PgStatWalSum)>>,
@@ -83,6 +95,15 @@ impl Data {
         Data {
             pg_stat_activity: RwLock::new(BoundedVecDeque::new(history)),
             wait_event_types: RwLock::new(BoundedVecDeque::new(history)),
+            wait_event_activity: RwLock::new(BoundedVecDeque::new(history)),
+            wait_event_bufferpin: RwLock::new(BoundedVecDeque::new(history)),
+            wait_event_client: RwLock::new(BoundedVecDeque::new(history)),
+            wait_event_extension: RwLock::new(BoundedVecDeque::new(history)),
+            wait_event_io: RwLock::new(BoundedVecDeque::new(history)),
+            wait_event_ipc: RwLock::new(BoundedVecDeque::new(history)),
+            wait_event_lock: RwLock::new(BoundedVecDeque::new(history)),
+            wait_event_lwlock: RwLock::new(BoundedVecDeque::new(history)),
+            wait_event_timeout: RwLock::new(BoundedVecDeque::new(history)),
             pg_stat_database_sum: RwLock::new(BoundedVecDeque::new(history)),
             pg_stat_bgwriter_sum: RwLock::new(BoundedVecDeque::new(history)),
             pg_stat_wal_sum: RwLock::new(BoundedVecDeque::new(history)),

@@ -38,8 +38,8 @@ pub struct PgStatActivity {
     pub wait_event_type: Option<String>,
     pub wait_event: Option<String>,
     pub state: Option<String>,
-    pub backend_xid: Option<i64>,
-    pub backend_xmin: Option<i64>,
+    pub backend_xid: Option<i32>,
+    pub backend_xmin: Option<i32>,
     pub query_id: Option<i64>,
     pub query: Option<String>,
     pub backend_type: Option<String>,
@@ -55,7 +55,43 @@ impl PgStatActivity {
             .push_back((current_timestamp, pg_stat_activity.clone()));
         DATA.wait_event_types.write().await.push_back((
             current_timestamp,
-            PgCurrentWaitTypes::process_pg_stat_activity(pg_stat_activity).await,
+            PgCurrentWaitTypes::process_pg_stat_activity(pg_stat_activity.clone()).await,
+        ));
+        DATA.wait_event_activity.write().await.push_back((
+            current_timestamp,
+            PgWaitTypeActivity::process_pg_stat_activity(pg_stat_activity.clone()).await,
+        ));
+        DATA.wait_event_bufferpin.write().await.push_back((
+            current_timestamp,
+            PgWaitTypeBufferPin::process_pg_stat_activity(pg_stat_activity.clone()).await,
+        ));
+        DATA.wait_event_client.write().await.push_back((
+            current_timestamp,
+            PgWaitTypeClient::process_pg_stat_activity(pg_stat_activity.clone()).await,
+        ));
+        DATA.wait_event_extension.write().await.push_back((
+            current_timestamp,
+            PgWaitTypeExtension::process_pg_stat_activity(pg_stat_activity.clone()).await,
+        ));
+        DATA.wait_event_io.write().await.push_back((
+            current_timestamp,
+            PgWaitTypeIO::process_pg_stat_activity(pg_stat_activity.clone()).await,
+        ));
+        DATA.wait_event_ipc.write().await.push_back((
+            current_timestamp,
+            PgWaitTypeIPC::process_pg_stat_activity(pg_stat_activity.clone()).await,
+        ));
+        DATA.wait_event_lock.write().await.push_back((
+            current_timestamp,
+            PgWaitTypeLock::process_pg_stat_activity(pg_stat_activity.clone()).await,
+        ));
+        DATA.wait_event_lwlock.write().await.push_back((
+            current_timestamp,
+            PgWaitTypeLWLock::process_pg_stat_activity(pg_stat_activity.clone()).await,
+        ));
+        DATA.wait_event_timeout.write().await.push_back((
+            current_timestamp,
+            PgWaitTypeTimeout::process_pg_stat_activity(pg_stat_activity).await,
         ));
     }
     async fn query(pool: &Pool<sqlx::Postgres>) -> Vec<PgStatActivity> {
@@ -79,8 +115,8 @@ impl PgStatActivity {
                    wait_event_type,
                    wait_event,
                    state, 
-                   backend_xid,
-                   backend_xmin,
+                   backend_xid::text::int,
+                   backend_xmin::text::int,
                    query_id, 
                    query, 
                    backend_type 
@@ -142,7 +178,7 @@ impl PgCurrentWaitTypes {
             .count();
         let io = pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "Io")
+            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "IO")
             .filter(|r| r.state.as_ref().unwrap_or(&"".to_string()) == "active")
             .count();
         let ipc = pg_stat_activity
@@ -180,7 +216,710 @@ impl PgCurrentWaitTypes {
     }
 }
 
-//
+#[derive(Debug, Default)]
+pub struct PgWaitTypeActivity {
+    archivermain: usize,
+    autovacuummain: usize,
+    bgwriterhibernate: usize,
+    bgwritermain: usize,
+    checkpointermain: usize,
+    logicalapplymain: usize,
+    logicallaunchermain: usize,
+    logicalparallelapplymain: usize,
+    recoverywalstream: usize,
+    sysloggermain: usize,
+    walreceivermain: usize,
+    walsendermain: usize,
+    walwritermain: usize,
+}
+impl PgWaitTypeActivity {
+    pub async fn new() -> Self {
+        PgWaitTypeActivity::default()
+    }
+    pub async fn process_pg_stat_activity(
+        pg_stat_activity: Vec<PgStatActivity>,
+    ) -> PgWaitTypeActivity {
+        let mut pgwaittypeactivity = PgWaitTypeActivity::new().await;
+        pg_stat_activity
+            .iter()
+            .filter(|r| r.wait_event_type == Some("Activity".to_string()))
+            .map(|r| r.wait_event.clone())
+            .for_each(|r| {
+                match r.unwrap_or_default().as_ref() {
+                    "ArchiverMain" => pgwaittypeactivity.archivermain += 1,
+                    "AutoVacuumMain" => pgwaittypeactivity.autovacuummain += 1,
+                    "BgWriterHibernate" => pgwaittypeactivity.bgwriterhibernate += 1,
+                    "BgWriterMain" => pgwaittypeactivity.bgwritermain += 1,
+                    "CheckpointerMain" => pgwaittypeactivity.checkpointermain += 1,
+                    "LogicalApplyMain" => pgwaittypeactivity.logicalapplymain += 1,
+                    "LogicalLauncherMain" => pgwaittypeactivity.logicallaunchermain += 1,
+                    "LogicalParallelApplyMain" => pgwaittypeactivity.logicalparallelapplymain += 1,
+                    "RecoveryWalStream" => pgwaittypeactivity.recoverywalstream += 1,
+                    "SysLoggerMain" => pgwaittypeactivity.sysloggermain += 1,
+                    "WalReceiverMain" => pgwaittypeactivity.walreceivermain += 1,
+                    "WalSenderMain" => pgwaittypeactivity.walsendermain += 1,
+                    "WalWriterMain" => pgwaittypeactivity.walwritermain += 1,
+                    &_ => {}
+                };
+            });
+        pgwaittypeactivity
+    }
+}
+#[derive(Debug, Default)]
+pub struct PgWaitTypeBufferPin {
+    bufferpin: usize,
+}
+impl PgWaitTypeBufferPin {
+    pub async fn new() -> Self {
+        PgWaitTypeBufferPin::default()
+    }
+    pub async fn process_pg_stat_activity(
+        pg_stat_activity: Vec<PgStatActivity>,
+    ) -> PgWaitTypeBufferPin {
+        let mut pgwaittypebufferpin = PgWaitTypeBufferPin::new().await;
+        pg_stat_activity
+            .iter()
+            .filter(|r| r.wait_event_type == Some("BufferPin".to_string()))
+            .map(|r| r.wait_event.clone())
+            .for_each(|r| {
+                match r.unwrap_or_default().as_ref() {
+                    "BufferPin" => pgwaittypebufferpin.bufferpin += 1,
+                    &_ => {}
+                };
+            });
+        pgwaittypebufferpin
+    }
+}
+#[derive(Debug, Default)]
+pub struct PgWaitTypeClient {
+    clientread: usize,
+    clientwrite: usize,
+    gssopenserver: usize,
+    libpqwalreceiverconnect: usize,
+    libpqwalreceiverreceive: usize,
+    sslopenserver: usize,
+    walsenderwaitforwal: usize,
+    walsenderwritedata: usize,
+}
+impl PgWaitTypeClient {
+    pub async fn new() -> Self {
+        PgWaitTypeClient::default()
+    }
+    pub async fn process_pg_stat_activity(
+        pg_stat_activity: Vec<PgStatActivity>,
+    ) -> PgWaitTypeClient {
+        let mut pgwaittypeclient = PgWaitTypeClient::new().await;
+        pg_stat_activity
+            .iter()
+            .filter(|r| r.wait_event_type == Some("Client".to_string()))
+            .map(|r| r.wait_event.clone())
+            .for_each(|r| {
+                match r.unwrap_or_default().as_ref() {
+                    "ClientRead" => pgwaittypeclient.clientread += 1,
+                    "ClientWrite" => pgwaittypeclient.clientwrite += 1,
+                    "GSSOpenServer" => pgwaittypeclient.gssopenserver += 1,
+                    "LibPQWalReceiverConnect" => pgwaittypeclient.libpqwalreceiverconnect += 1,
+                    "LibPQWalReceiverReceive" => pgwaittypeclient.libpqwalreceiverreceive += 1,
+                    "SSLOpenServer" => pgwaittypeclient.sslopenserver += 1,
+                    "WalSenderWaitForWal" => pgwaittypeclient.walsenderwaitforwal += 1,
+                    "WalSenderWriteData" => pgwaittypeclient.walsenderwritedata += 1,
+                    &_ => {}
+                };
+            });
+        pgwaittypeclient
+    }
+}
+#[derive(Debug, Default)]
+pub struct PgWaitTypeExtension {
+    extension: usize,
+}
+impl PgWaitTypeExtension {
+    pub async fn new() -> Self {
+        PgWaitTypeExtension::default()
+    }
+    pub async fn process_pg_stat_activity(
+        pg_stat_activity: Vec<PgStatActivity>,
+    ) -> PgWaitTypeExtension {
+        let mut pgwaittypeextension = PgWaitTypeExtension::new().await;
+        pg_stat_activity
+            .iter()
+            .filter(|r| r.wait_event_type == Some("Extension".to_string()))
+            .map(|r| r.wait_event.clone())
+            .for_each(|r| {
+                match r.unwrap_or_default().as_ref() {
+                    "Extension" => pgwaittypeextension.extension += 1,
+                    &_ => {}
+                };
+            });
+        pgwaittypeextension
+    }
+}
+#[derive(Debug, Default)]
+pub struct PgWaitTypeIO {
+    basebackupread: usize,
+    basebackupsync: usize,
+    basebackupwrite: usize,
+    buffileread: usize,
+    buffiletruncate: usize,
+    buffilewrite: usize,
+    controlfileread: usize,
+    controlfilesync: usize,
+    controlfilesyncupdate: usize,
+    controlfilewrite: usize,
+    controlfilewriteupdate: usize,
+    copyfileread: usize,
+    copyfilewrite: usize,
+    dsmallocate: usize,
+    dsmfillzerowrite: usize,
+    datafileextend: usize,
+    datafileflush: usize,
+    datafileimmediatesync: usize,
+    datafileprefetch: usize,
+    datafileread: usize,
+    datafilesync: usize,
+    datafiletruncate: usize,
+    datafilewrite: usize,
+    lockfileaddtodatadirread: usize,
+    lockfileaddtodatadirsync: usize,
+    lockfileaddtodatadirwrite: usize,
+    lockfilecreateread: usize,
+    lockfilecreatesync: usize,
+    lockfilecreatewrite: usize,
+    lockfilerecheckdatadirread: usize,
+    logicalrewritecheckpointsync: usize,
+    logicalrewritemappingsync: usize,
+    logicalrewritemappingwrite: usize,
+    logicalrewritesync: usize,
+    logicalrewritetruncate: usize,
+    logicalrewritewrite: usize,
+    relationmapread: usize,
+    relationmapreplace: usize,
+    relationmapwrite: usize,
+    reorderbufferread: usize,
+    reorderbufferwrite: usize,
+    reorderlogicalmappingread: usize,
+    replicationslotread: usize,
+    replicationslotrestoresync: usize,
+    replicationslotsync: usize,
+    replicationslotwrite: usize,
+    slruflushsync: usize,
+    slruread: usize,
+    slrusync: usize,
+    slruwrite: usize,
+    snapbuildread: usize,
+    snapbuildsync: usize,
+    snapbuildwrite: usize,
+    timelinehistoryfilesync: usize,
+    timelinehistoryfilewrite: usize,
+    timelinehistoryread: usize,
+    timelinehistorysync: usize,
+    timelinehistorywrite: usize,
+    twophasefileread: usize,
+    twophasefilesync: usize,
+    twophasefilewrite: usize,
+    versionfilesync: usize,
+    versionfilewrite: usize,
+    walbootstrapsync: usize,
+    walbootstrapwrite: usize,
+    walcopyread: usize,
+    walcopysync: usize,
+    walcopywrite: usize,
+    walinitsync: usize,
+    walinitwrite: usize,
+    walread: usize,
+    walsendertimelinehistoryread: usize,
+    walsync: usize,
+    walsyncmethodassign: usize,
+    walwrite: usize,
+}
+impl PgWaitTypeIO {
+    pub async fn new() -> Self {
+        PgWaitTypeIO::default()
+    }
+    pub async fn process_pg_stat_activity(pg_stat_activity: Vec<PgStatActivity>) -> PgWaitTypeIO {
+        let mut pgwaittypeio = PgWaitTypeIO::new().await;
+        pg_stat_activity
+            .iter()
+            .filter(|r| r.wait_event_type == Some("IO".to_string()))
+            .map(|r| r.wait_event.clone())
+            .for_each(|r| {
+                match r.unwrap_or_default().as_ref() {
+                    "BaseBackupRead" => pgwaittypeio.basebackupread += 1,
+                    "BaseBackupSync" => pgwaittypeio.basebackupsync += 1,
+                    "BaseBackupWrite" => pgwaittypeio.basebackupwrite += 1,
+                    "BufFileRead" => pgwaittypeio.buffileread += 1,
+                    "BufFileTruncate" => pgwaittypeio.buffiletruncate += 1,
+                    "BufFileWrite" => pgwaittypeio.buffilewrite += 1,
+                    "ControlFileRead" => pgwaittypeio.controlfileread += 1,
+                    "ControlFileSync" => pgwaittypeio.controlfilesync += 1,
+                    "ControlFileSyncUpdate" => pgwaittypeio.controlfilesyncupdate += 1,
+                    "ControlFileWrite" => pgwaittypeio.controlfilewrite += 1,
+                    "ControlFileWriteUpdate" => pgwaittypeio.controlfilewriteupdate += 1,
+                    "CopyFileRead" => pgwaittypeio.copyfileread += 1,
+                    "CopyFileWrite" => pgwaittypeio.copyfilewrite += 1,
+                    "DSMAllocate" => pgwaittypeio.dsmallocate += 1,
+                    "DSMFillZeroWrite" => pgwaittypeio.dsmfillzerowrite += 1,
+                    "DataFileExtend" => pgwaittypeio.datafileextend += 1,
+                    "DataFileFlush" => pgwaittypeio.datafileflush += 1,
+                    "DataFileImmediateSync" => pgwaittypeio.datafileimmediatesync += 1,
+                    "DataFilePrefetch" => pgwaittypeio.datafileprefetch += 1,
+                    "DataFileRead" => pgwaittypeio.datafileread += 1,
+                    "DataFileSync" => pgwaittypeio.datafilesync += 1,
+                    "DataFileTruncate" => pgwaittypeio.datafiletruncate += 1,
+                    "DataFileWrite" => pgwaittypeio.datafilewrite += 1,
+                    "LockFileAddToDataDirRead" => pgwaittypeio.lockfileaddtodatadirread += 1,
+                    "LockFileAddToDataDirSync" => pgwaittypeio.lockfileaddtodatadirsync += 1,
+                    "LockFileAddToDataDirWrite" => pgwaittypeio.lockfileaddtodatadirwrite += 1,
+                    "LockFileCreateRead" => pgwaittypeio.lockfilecreateread += 1,
+                    "LockFileCreateSync" => pgwaittypeio.lockfilecreatesync += 1,
+                    "LockFileCreateWrite" => pgwaittypeio.lockfilecreatewrite += 1,
+                    "LockFileReCheckDataDirRead" => pgwaittypeio.lockfilerecheckdatadirread += 1,
+                    "LogicalRewriteCheckpointSync" => {
+                        pgwaittypeio.logicalrewritecheckpointsync += 1
+                    }
+                    "LogicalRewriteMappingSync" => pgwaittypeio.logicalrewritemappingsync += 1,
+                    "LogicalRewriteMappingWrite" => pgwaittypeio.logicalrewritemappingwrite += 1,
+                    "LogicalRewriteSync" => pgwaittypeio.logicalrewritesync += 1,
+                    "LogicalRewriteTruncate" => pgwaittypeio.logicalrewritetruncate += 1,
+                    "LogicalRewriteWrite" => pgwaittypeio.logicalrewritewrite += 1,
+                    "RelationMapRead" => pgwaittypeio.relationmapread += 1,
+                    "RelationMapReplace" => pgwaittypeio.relationmapreplace += 1,
+                    "RelationMapWrite" => pgwaittypeio.relationmapwrite += 1,
+                    "ReorderBufferRead" => pgwaittypeio.reorderbufferread += 1,
+                    "ReorderBufferWrite" => pgwaittypeio.reorderbufferwrite += 1,
+                    "ReorderLogicalMappingRead" => pgwaittypeio.reorderlogicalmappingread += 1,
+                    "ReplicationSlotRead" => pgwaittypeio.replicationslotread += 1,
+                    "ReplicationSlotRestoreSync" => pgwaittypeio.replicationslotrestoresync += 1,
+                    "ReplicationSlotSync" => pgwaittypeio.replicationslotsync += 1,
+                    "ReplicationSlotWrite" => pgwaittypeio.replicationslotwrite += 1,
+                    "SLRUFlushSync" => pgwaittypeio.slruflushsync += 1,
+                    "SLRURead" => pgwaittypeio.slruread += 1,
+                    "SLRUSync" => pgwaittypeio.slrusync += 1,
+                    "SLRUWrite" => pgwaittypeio.slruwrite += 1,
+                    "SnapbuildRead" => pgwaittypeio.snapbuildread += 1,
+                    "SnapbuildSync" => pgwaittypeio.snapbuildsync += 1,
+                    "SnapbuildWrite" => pgwaittypeio.snapbuildwrite += 1,
+                    "TimeLineHistoryFileSync" => pgwaittypeio.timelinehistoryfilesync += 1,
+                    "TimeLineHistoryFileWrite" => pgwaittypeio.timelinehistoryfilewrite += 1,
+                    "TimeLineHistoryRead" => pgwaittypeio.timelinehistoryread += 1,
+                    "TimeLineHistorySync" => pgwaittypeio.timelinehistorysync += 1,
+                    "TimeLineHistoryWrite" => pgwaittypeio.timelinehistorywrite += 1,
+                    "TwophaseFileRead" => pgwaittypeio.twophasefileread += 1,
+                    "TwophaseFileSync" => pgwaittypeio.twophasefilesync += 1,
+                    "TwophaseFileWrite" => pgwaittypeio.twophasefilewrite += 1,
+                    "VersionFileSync" => pgwaittypeio.versionfilesync += 1,
+                    "VersionFileWrite" => pgwaittypeio.versionfilewrite += 1,
+                    "WalBootstrapSync" => pgwaittypeio.walbootstrapsync += 1,
+                    "WalBootstrapWrite" => pgwaittypeio.walbootstrapwrite += 1,
+                    "WalCopyRead" => pgwaittypeio.walcopyread += 1,
+                    "WalCopySync" => pgwaittypeio.walcopysync += 1,
+                    "WalCopyWrite" => pgwaittypeio.walcopywrite += 1,
+                    "WalInitSync" => pgwaittypeio.walinitsync += 1,
+                    "WalInitWrite" => pgwaittypeio.walinitwrite += 1,
+                    "WalRead" => pgwaittypeio.walread += 1,
+                    "WalSenderTimelineHistoryRead" => {
+                        pgwaittypeio.walsendertimelinehistoryread += 1
+                    }
+                    "WalSync" => pgwaittypeio.walsync += 1,
+                    "WalSyncMethodAssign" => pgwaittypeio.walsyncmethodassign += 1,
+                    "WalWrite" => pgwaittypeio.walwrite += 1,
+                    &_ => {}
+                };
+            });
+        pgwaittypeio
+    }
+}
+#[derive(Debug, Default)]
+pub struct PgWaitTypeIPC {
+    appendready: usize,
+    archivecleanupcommand: usize,
+    archivecommand: usize,
+    backendtermination: usize,
+    backupwaitwalarchive: usize,
+    bgworkershutdown: usize,
+    bgworkerstartup: usize,
+    btreepage: usize,
+    bufferio: usize,
+    checkpointdone: usize,
+    checkpointstart: usize,
+    executegather: usize,
+    hashbatchallocate: usize,
+    hashbatchelect: usize,
+    hashbatchload: usize,
+    hashbuildallocate: usize,
+    hashbuildelect: usize,
+    hashbuildhashinner: usize,
+    hashbuildhashouter: usize,
+    hashgrowbatchesdecide: usize,
+    hashgrowbatcheselect: usize,
+    hashgrowbatchesfinish: usize,
+    hashgrowbatchesreallocate: usize,
+    hashgrowbatchesrepartition: usize,
+    hashgrowbucketselect: usize,
+    hashgrowbucketsreallocate: usize,
+    hashgrowbucketsreinsert: usize,
+    logicalapplysenddata: usize,
+    logicalparallelapplystatechange: usize,
+    logicalsyncdata: usize,
+    logicalsyncstatechange: usize,
+    messagequeueinternal: usize,
+    messagequeueputmessage: usize,
+    messagequeuereceive: usize,
+    messagequeuesend: usize,
+    parallelbitmapscan: usize,
+    parallelcreateindexscan: usize,
+    parallelfinish: usize,
+    procarraygroupupdate: usize,
+    procsignalbarrier: usize,
+    promote: usize,
+    recoveryconflictsnapshot: usize,
+    recoveryconflicttablespace: usize,
+    recoveryendcommand: usize,
+    recoverypause: usize,
+    replicationorigindrop: usize,
+    replicationslotdrop: usize,
+    restorecommand: usize,
+    safesnapshot: usize,
+    syncrep: usize,
+    walreceiverexit: usize,
+    walreceiverwaitstart: usize,
+    xactgroupupdate: usize,
+}
+impl PgWaitTypeIPC {
+    pub async fn new() -> Self {
+        PgWaitTypeIPC::default()
+    }
+    pub async fn process_pg_stat_activity(pg_stat_activity: Vec<PgStatActivity>) -> PgWaitTypeIPC {
+        let mut pgwaittypeipc = PgWaitTypeIPC::new().await;
+        pg_stat_activity
+            .iter()
+            .filter(|r| r.wait_event_type == Some("IPC".to_string()))
+            .map(|r| r.wait_event.clone())
+            .for_each(|r| {
+                match r.unwrap_or_default().as_ref() {
+                    "AppendReady" => pgwaittypeipc.appendready += 1,
+                    "ArchiveCleanupCommand" => pgwaittypeipc.archivecleanupcommand += 1,
+                    "ArchiveCommand" => pgwaittypeipc.archivecommand += 1,
+                    "BackendTermination" => pgwaittypeipc.backendtermination += 1,
+                    "BackupWaitWalArchive" => pgwaittypeipc.backupwaitwalarchive += 1,
+                    "BgWorkerShutdown" => pgwaittypeipc.bgworkershutdown += 1,
+                    "BgWorkerStartup" => pgwaittypeipc.bgworkerstartup += 1,
+                    "BtreePage" => pgwaittypeipc.btreepage += 1,
+                    "BufferIO" => pgwaittypeipc.bufferio += 1,
+                    "CheckpointDone" => pgwaittypeipc.checkpointdone += 1,
+                    "CheckpointStart" => pgwaittypeipc.checkpointstart += 1,
+                    "ExecuteGather" => pgwaittypeipc.executegather += 1,
+                    "HashBatchAllocate" => pgwaittypeipc.hashbatchallocate += 1,
+                    "HashBatchElect" => pgwaittypeipc.hashbatchelect += 1,
+                    "HashBatchLoad" => pgwaittypeipc.hashbatchload += 1,
+                    "HashBuildAllocate" => pgwaittypeipc.hashbuildallocate += 1,
+                    "HashBuildElect" => pgwaittypeipc.hashbuildelect += 1,
+                    "HashBuildHashInner" => pgwaittypeipc.hashbuildhashinner += 1,
+                    "HashBuildHashOuter" => pgwaittypeipc.hashbuildhashouter += 1,
+                    "HashGrowBatchesDecide" => pgwaittypeipc.hashgrowbatchesdecide += 1,
+                    "HashGrowBatchesElect" => pgwaittypeipc.hashgrowbatcheselect += 1,
+                    "HashGrowBatchesFinish" => pgwaittypeipc.hashgrowbatchesfinish += 1,
+                    "HashGrowBatchesReallocate" => pgwaittypeipc.hashgrowbatchesreallocate += 1,
+                    "HashGrowBatchesRepartition" => pgwaittypeipc.hashgrowbatchesrepartition += 1,
+                    "HashGrowBucketsElect" => pgwaittypeipc.hashgrowbucketselect += 1,
+                    "HashGrowBucketsReallocate" => pgwaittypeipc.hashgrowbucketsreallocate += 1,
+                    "HashGrowBucketsReinsert" => pgwaittypeipc.hashgrowbucketsreinsert += 1,
+                    "LogicalApplySendData" => pgwaittypeipc.logicalapplysenddata += 1,
+                    "LogicalParallelApplyStateChange" => {
+                        pgwaittypeipc.logicalparallelapplystatechange += 1
+                    }
+                    "LogicalSyncData" => pgwaittypeipc.logicalsyncdata += 1,
+                    "LogicalSyncStateChange" => pgwaittypeipc.logicalsyncstatechange += 1,
+                    "MessageQueueInternal" => pgwaittypeipc.messagequeueinternal += 1,
+                    "MessageQueuePutMessage" => pgwaittypeipc.messagequeueputmessage += 1,
+                    "MessageQueueReceive" => pgwaittypeipc.messagequeuereceive += 1,
+                    "MessageQueueSend" => pgwaittypeipc.messagequeuesend += 1,
+                    "ParallelBitmapScan" => pgwaittypeipc.parallelbitmapscan += 1,
+                    "ParallelCreateIndexScan" => pgwaittypeipc.parallelcreateindexscan += 1,
+                    "ParallelFinish" => pgwaittypeipc.parallelfinish += 1,
+                    "ProcArrayGroupUpdate" => pgwaittypeipc.procarraygroupupdate += 1,
+                    "ProcSignalBarrier" => pgwaittypeipc.procsignalbarrier += 1,
+                    "Promote" => pgwaittypeipc.promote += 1,
+                    "RecoveryConflictSnapshot" => pgwaittypeipc.recoveryconflictsnapshot += 1,
+                    "RecoveryConflictTablespace" => pgwaittypeipc.recoveryconflicttablespace += 1,
+                    "RecoveryEndCommand" => pgwaittypeipc.recoveryendcommand += 1,
+                    "RecoveryPause" => pgwaittypeipc.recoverypause += 1,
+                    "ReplicationOriginDrop" => pgwaittypeipc.replicationorigindrop += 1,
+                    "ReplicationSlotDrop" => pgwaittypeipc.replicationslotdrop += 1,
+                    "RestoreCommand" => pgwaittypeipc.restorecommand += 1,
+                    "SafeSnapshot" => pgwaittypeipc.safesnapshot += 1,
+                    "SyncRep" => pgwaittypeipc.syncrep += 1,
+                    "WalReceiverExit" => pgwaittypeipc.walreceiverexit += 1,
+                    "WalReceiverWaitStart" => pgwaittypeipc.walreceiverwaitstart += 1,
+                    "XactGroupUpdate" => pgwaittypeipc.xactgroupupdate += 1,
+                    &_ => {}
+                };
+            });
+        pgwaittypeipc
+    }
+}
+#[derive(Debug, Default)]
+pub struct PgWaitTypeLock {
+    advisory: usize,
+    applytransaction: usize,
+    extend: usize,
+    frozenid: usize,
+    object: usize,
+    page: usize,
+    relation: usize,
+    spectoken: usize,
+    transactionid: usize,
+    tuple: usize,
+    userlock: usize,
+    virtualxid: usize,
+}
+impl PgWaitTypeLock {
+    pub async fn new() -> Self {
+        PgWaitTypeLock::default()
+    }
+    pub async fn process_pg_stat_activity(pg_stat_activity: Vec<PgStatActivity>) -> PgWaitTypeLock {
+        let mut pgwaittypelock = PgWaitTypeLock::new().await;
+        pg_stat_activity
+            .iter()
+            .filter(|r| r.wait_event_type == Some("Lock".to_string()))
+            .map(|r| r.wait_event.clone())
+            .for_each(|r| {
+                match r.unwrap_or_default().as_ref() {
+                    "advisory" => pgwaittypelock.advisory += 1,
+                    "applytransaction" => pgwaittypelock.applytransaction += 1,
+                    "extend" => pgwaittypelock.extend += 1,
+                    "frozenid" => pgwaittypelock.frozenid += 1,
+                    "object" => pgwaittypelock.object += 1,
+                    "page" => pgwaittypelock.page += 1,
+                    "relation" => pgwaittypelock.relation += 1,
+                    "spectoken" => pgwaittypelock.spectoken += 1,
+                    "transactionid" => pgwaittypelock.transactionid += 1,
+                    "tuple" => pgwaittypelock.tuple += 1,
+                    "userlock" => pgwaittypelock.userlock += 1,
+                    "virtualxid" => pgwaittypelock.virtualxid += 1,
+                    &_ => {}
+                };
+            });
+        pgwaittypelock
+    }
+}
+#[derive(Debug, Default)]
+pub struct PgWaitTypeLWLock {
+    addinsheminit: usize,
+    autofile: usize,
+    autovacuum: usize,
+    autovacuumschedule: usize,
+    backgroundworker: usize,
+    btreevacuum: usize,
+    buffercontent: usize,
+    buffermapping: usize,
+    checkpointercomm: usize,
+    committs: usize,
+    committsbuffer: usize,
+    committsslru: usize,
+    controlfile: usize,
+    dynamicsharedmemorycontrol: usize,
+    lockfastpath: usize,
+    lockmanager: usize,
+    logicalreplauncerdsa: usize,
+    logicalreplauncerhash: usize,
+    logicalrepworker: usize,
+    multixactgen: usize,
+    multixactmemberbuffer: usize,
+    multixactmemberslru: usize,
+    multixactoffsetbuffer: usize,
+    multixactoffsetslru: usize,
+    multixacttruncation: usize,
+    notifybuffer: usize,
+    notifyqueue: usize,
+    notifyqueuetail: usize,
+    notifyslru: usize,
+    oidgen: usize,
+    oldsnapshottimemap: usize,
+    parallelappend: usize,
+    parallelhashjoin: usize,
+    parallelquerydsa: usize,
+    persessiondsa: usize,
+    persessionrecordtype: usize,
+    persessionrecordtypmod: usize,
+    perxactpredicatelist: usize,
+    pgstatsdata: usize,
+    pgstatsdsa: usize,
+    pgstatshash: usize,
+    predicatelockmanager: usize,
+    procarray: usize,
+    relationmapping: usize,
+    relcacheinit: usize,
+    replicationorigin: usize,
+    replicationoriginstate: usize,
+    replicationslotallocation: usize,
+    replicationslotcontrol: usize,
+    replicationslotio: usize,
+    serialbuffer: usize,
+    serializablefinishedlist: usize,
+    serializablepredicatelist: usize,
+    serializablexacthash: usize,
+    serialslru: usize,
+    sharedtidbitmap: usize,
+    sharedtuplestore: usize,
+    shmemindex: usize,
+    sinvalread: usize,
+    sinvalwrite: usize,
+    subtransbuffer: usize,
+    subtransslru: usize,
+    syncrep: usize,
+    syncscan: usize,
+    tablespacecreate: usize,
+    twophasestate: usize,
+    walbufmapping: usize,
+    walinsert: usize,
+    walwrite: usize,
+    wraplimitsvacuum: usize,
+    xactbuffer: usize,
+    xactslru: usize,
+    xacttruncation: usize,
+    xidgen: usize,
+}
+impl PgWaitTypeLWLock {
+    pub async fn new() -> Self {
+        PgWaitTypeLWLock::default()
+    }
+    pub async fn process_pg_stat_activity(
+        pg_stat_activity: Vec<PgStatActivity>,
+    ) -> PgWaitTypeLWLock {
+        let mut pgwaittypelwlock = PgWaitTypeLWLock::new().await;
+        pg_stat_activity
+            .iter()
+            .filter(|r| r.wait_event_type == Some("LWLock".to_string()))
+            .map(|r| r.wait_event.clone())
+            .for_each(|r| {
+                match r.unwrap_or_default().as_ref() {
+                    "AddinShmemInit" => pgwaittypelwlock.addinsheminit += 1,
+                    "AutoFile" => pgwaittypelwlock.autofile += 1,
+                    "Autovacuum" => pgwaittypelwlock.autovacuum += 1,
+                    "AutovacuumSchedule" => pgwaittypelwlock.autovacuumschedule += 1,
+                    "BackgroundWorker" => pgwaittypelwlock.backgroundworker += 1,
+                    "BtreeVacuum" => pgwaittypelwlock.btreevacuum += 1,
+                    "BufferContent" => pgwaittypelwlock.buffercontent += 1,
+                    "BufferMapping" => pgwaittypelwlock.buffermapping += 1,
+                    "CheckpointerComm" => pgwaittypelwlock.checkpointercomm += 1,
+                    "CommitTs" => pgwaittypelwlock.committs += 1,
+                    "CommitTsBuffer" => pgwaittypelwlock.committsbuffer += 1,
+                    "CommitTsSLRU" => pgwaittypelwlock.committsslru += 1,
+                    "ControlFile" => pgwaittypelwlock.controlfile += 1,
+                    "DynamicSharedMemoryControl" => {
+                        pgwaittypelwlock.dynamicsharedmemorycontrol += 1
+                    }
+                    "LockFastPath" => pgwaittypelwlock.lockfastpath += 1,
+                    "LockManager" => pgwaittypelwlock.lockmanager += 1,
+                    "LogicalRepLauncerDSA" => pgwaittypelwlock.logicalreplauncerdsa += 1,
+                    "LogicalRepLauncerHash" => pgwaittypelwlock.logicalreplauncerhash += 1,
+                    "LogicalRepWorker" => pgwaittypelwlock.logicalrepworker += 1,
+                    "MultiXactGen" => pgwaittypelwlock.multixactgen += 1,
+                    "MultiXactMemberBuffer" => pgwaittypelwlock.multixactmemberbuffer += 1,
+                    "MultiXactMemberSLRU" => pgwaittypelwlock.multixactmemberslru += 1,
+                    "MultiXactOffsetBuffer" => pgwaittypelwlock.multixactoffsetbuffer += 1,
+                    "MultiXactOffsetSLRU" => pgwaittypelwlock.multixactoffsetslru += 1,
+                    "MultiXactTruncation" => pgwaittypelwlock.multixacttruncation += 1,
+                    "NotifyBuffer" => pgwaittypelwlock.notifybuffer += 1,
+                    "NotifyQueue" => pgwaittypelwlock.notifyqueue += 1,
+                    "NotifyQueueTail" => pgwaittypelwlock.notifyqueuetail += 1,
+                    "NotifySLRU" => pgwaittypelwlock.notifyslru += 1,
+                    "OidGen" => pgwaittypelwlock.oidgen += 1,
+                    "OldSnapshotTimeMap" => pgwaittypelwlock.oldsnapshottimemap += 1,
+                    "ParallelAppend" => pgwaittypelwlock.parallelappend += 1,
+                    "ParallelHashJoin" => pgwaittypelwlock.parallelhashjoin += 1,
+                    "ParallelQueryDSA" => pgwaittypelwlock.parallelquerydsa += 1,
+                    "PerSessionDSA" => pgwaittypelwlock.persessiondsa += 1,
+                    "PerSessionRecordType" => pgwaittypelwlock.persessionrecordtype += 1,
+                    "PerSessionRecordTypMod" => pgwaittypelwlock.persessionrecordtypmod += 1,
+                    "PerXactPredicateList" => pgwaittypelwlock.perxactpredicatelist += 1,
+                    "PgStatsData" => pgwaittypelwlock.pgstatsdata += 1,
+                    "PgStatsDSA" => pgwaittypelwlock.pgstatsdsa += 1,
+                    "PgStatsHash" => pgwaittypelwlock.pgstatshash += 1,
+                    "PredicateLockManager" => pgwaittypelwlock.predicatelockmanager += 1,
+                    "ProcArray" => pgwaittypelwlock.procarray += 1,
+                    "RelationMapping" => pgwaittypelwlock.relationmapping += 1,
+                    "RelCacheInit" => pgwaittypelwlock.relcacheinit += 1,
+                    "ReplicationOrigin" => pgwaittypelwlock.replicationorigin += 1,
+                    "ReplicationOriginState" => pgwaittypelwlock.replicationoriginstate += 1,
+                    "ReplicationSlotAllocation" => pgwaittypelwlock.replicationslotallocation += 1,
+                    "ReplicationSlotControl" => pgwaittypelwlock.replicationslotcontrol += 1,
+                    "ReplicationSlotIO" => pgwaittypelwlock.replicationslotio += 1,
+                    "SerialBuffer" => pgwaittypelwlock.serialbuffer += 1,
+                    "SerializableFinishedList" => pgwaittypelwlock.serializablefinishedlist += 1,
+                    "SerializablePredicateList" => pgwaittypelwlock.serializablepredicatelist += 1,
+                    "SerializableXactHash" => pgwaittypelwlock.serializablexacthash += 1,
+                    "SerialSLRU" => pgwaittypelwlock.serialslru += 1,
+                    "SharedTidBitmap" => pgwaittypelwlock.sharedtidbitmap += 1,
+                    "SharedTupleStore" => pgwaittypelwlock.sharedtuplestore += 1,
+                    "ShmemIndex" => pgwaittypelwlock.shmemindex += 1,
+                    "SInvalRead" => pgwaittypelwlock.sinvalread += 1,
+                    "SInvalWrite" => pgwaittypelwlock.sinvalwrite += 1,
+                    "SubtransBuffer" => pgwaittypelwlock.subtransbuffer += 1,
+                    "SubtransSLRU" => pgwaittypelwlock.subtransslru += 1,
+                    "SyncRep" => pgwaittypelwlock.syncrep += 1,
+                    "SyncScan" => pgwaittypelwlock.syncscan += 1,
+                    "TablespaceCreate" => pgwaittypelwlock.tablespacecreate += 1,
+                    "TwoPhaseState" => pgwaittypelwlock.twophasestate += 1,
+                    "WALBufMapping" => pgwaittypelwlock.walbufmapping += 1,
+                    "WALInsert" => pgwaittypelwlock.walinsert += 1,
+                    "WALWrite" => pgwaittypelwlock.walwrite += 1,
+                    "WrapLimitsVacuum" => pgwaittypelwlock.wraplimitsvacuum += 1,
+                    "XactBuffer" => pgwaittypelwlock.xactbuffer += 1,
+                    "XactSLRU" => pgwaittypelwlock.xactslru += 1,
+                    "XactTruncation" => pgwaittypelwlock.xacttruncation += 1,
+                    "XidGen" => pgwaittypelwlock.xidgen += 1,
+                    &_ => {}
+                };
+            });
+        pgwaittypelwlock
+    }
+}
+#[derive(Debug, Default)]
+pub struct PgWaitTypeTimeout {
+    basebackupthrottle: usize,
+    checkpointerwritedelay: usize,
+    pgsleep: usize,
+    recoveryapplydelay: usize,
+    recoveryretrieveretryinterval: usize,
+    registersyncrequest: usize,
+    spindelay: usize,
+    vacuumdelay: usize,
+    vacuumtruncate: usize,
+}
+impl PgWaitTypeTimeout {
+    pub async fn new() -> Self {
+        PgWaitTypeTimeout::default()
+    }
+    pub async fn process_pg_stat_activity(
+        pg_stat_activity: Vec<PgStatActivity>,
+    ) -> PgWaitTypeTimeout {
+        let mut pgwaittypetimeout = PgWaitTypeTimeout::new().await;
+        pg_stat_activity
+            .iter()
+            .filter(|r| r.wait_event_type == Some("Timeout".to_string()))
+            .map(|r| r.wait_event.clone())
+            .for_each(|r| {
+                match r.unwrap_or_default().as_ref() {
+                    "BaseBackupThrottle" => pgwaittypetimeout.basebackupthrottle += 1,
+                    "CheckpoinWriteDelay" => pgwaittypetimeout.checkpointerwritedelay += 1,
+                    "PgSleep" => pgwaittypetimeout.pgsleep += 1,
+                    "RecoveryApplyDelay" => pgwaittypetimeout.recoveryapplydelay += 1,
+                    "RecoveryRetrieveRetryInterval" => {
+                        pgwaittypetimeout.recoveryretrieveretryinterval += 1
+                    }
+                    "RegisterSyncRequest" => pgwaittypetimeout.registersyncrequest += 1,
+                    "SpinDelay" => pgwaittypetimeout.spindelay += 1,
+                    "VacuumDelay" => pgwaittypetimeout.vacuumdelay += 1,
+                    "VacuumTruncate" => pgwaittypetimeout.vacuumtruncate += 1,
+                    &_ => {}
+                };
+            });
+        pgwaittypetimeout
+    }
+}
+
 #[derive(Debug)]
 pub struct PgStatDatabaseSum {
     pub xact_commit_ps: f64,
@@ -961,6 +1700,6 @@ pub async fn processor_main() -> Result<()> {
         //    pg_database.iter().map(|r| r.age_datfrozenxid).max()
         //);
         //println!("{:#?}", DELTATABLE.read().await);
-        println!("{:?}", DATA.pg_stat_database_sum.read().await);
+        println!("{:?}", DATA.wait_event_activity.read().await);
     }
 }
