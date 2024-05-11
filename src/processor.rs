@@ -112,8 +112,8 @@ impl PgStatActivity {
                    clock_timestamp()-xact_start as xact_time, 
                    clock_timestamp()-query_start as query_time, 
                    clock_timestamp()-state_change as state_time, 
-                   wait_event_type,
-                   wait_event,
+                   lower(wait_event_type) as wait_event_type,
+                   lower(wait_event) as wait_event,
                    state, 
                    backend_xid::text::int,
                    backend_xmin::text::int,
@@ -158,47 +158,47 @@ impl PgCurrentWaitTypes {
             .count();
         let activity = pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "Activity")
+            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "activity")
             .filter(|r| r.state.as_ref().unwrap_or(&"".to_string()) == "active")
             .count();
         let buffer_pin = pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "BufferPin")
+            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "bufferpin")
             .filter(|r| r.state.as_ref().unwrap_or(&"".to_string()) == "active")
             .count();
         let client = pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "Client")
+            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "client")
             .filter(|r| r.state.as_ref().unwrap_or(&"".to_string()) == "active")
             .count();
         let extension = pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "Extension")
+            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "extension")
             .filter(|r| r.state.as_ref().unwrap_or(&"".to_string()) == "active")
             .count();
         let io = pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "IO")
+            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "io")
             .filter(|r| r.state.as_ref().unwrap_or(&"".to_string()) == "active")
             .count();
         let ipc = pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "IPC")
+            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "ipc")
             .filter(|r| r.state.as_ref().unwrap_or(&"".to_string()) == "active")
             .count();
         let lock = pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "Lock")
+            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "lock")
             .filter(|r| r.state.as_ref().unwrap_or(&"".to_string()) == "active")
             .count();
         let lwlock = pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "LWLock")
+            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "lwlock")
             .filter(|r| r.state.as_ref().unwrap_or(&"".to_string()) == "active")
             .count();
         let timeout = pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "Timeout")
+            .filter(|r| r.wait_event_type.as_ref().unwrap_or(&"".to_string()) == "timeout")
             .filter(|r| r.state.as_ref().unwrap_or(&"".to_string()) == "active")
             .count();
         PgCurrentWaitTypes {
@@ -218,19 +218,20 @@ impl PgCurrentWaitTypes {
 
 #[derive(Debug, Default)]
 pub struct PgWaitTypeActivity {
-    archivermain: usize,
-    autovacuummain: usize,
-    bgwriterhibernate: usize,
-    bgwritermain: usize,
-    checkpointermain: usize,
-    logicalapplymain: usize,
-    logicallaunchermain: usize,
-    logicalparallelapplymain: usize,
-    recoverywalstream: usize,
-    sysloggermain: usize,
-    walreceivermain: usize,
-    walsendermain: usize,
-    walwritermain: usize,
+    pub archivermain: usize,
+    pub autovacuummain: usize,
+    pub bgwriterhibernate: usize,
+    pub bgwritermain: usize,
+    pub checkpointermain: usize,
+    pub logicalapplymain: usize,
+    pub logicallaunchermain: usize,
+    pub logicalparallelapplymain: usize,
+    pub recoverywalstream: usize,
+    pub sysloggermain: usize,
+    pub walreceivermain: usize,
+    pub walsendermain: usize,
+    pub walwritermain: usize,
+    pub other: usize,
 }
 impl PgWaitTypeActivity {
     pub async fn new() -> Self {
@@ -242,24 +243,27 @@ impl PgWaitTypeActivity {
         let mut pgwaittypeactivity = PgWaitTypeActivity::new().await;
         pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type == Some("Activity".to_string()))
+            .filter(|r| {
+                r.wait_event_type == Some("activity".to_string())
+                    && r.state.as_ref().unwrap_or(&"".to_string()) == "active"
+            })
             .map(|r| r.wait_event.clone())
             .for_each(|r| {
                 match r.unwrap_or_default().as_ref() {
-                    "ArchiverMain" => pgwaittypeactivity.archivermain += 1,
-                    "AutoVacuumMain" => pgwaittypeactivity.autovacuummain += 1,
-                    "BgWriterHibernate" => pgwaittypeactivity.bgwriterhibernate += 1,
-                    "BgWriterMain" => pgwaittypeactivity.bgwritermain += 1,
-                    "CheckpointerMain" => pgwaittypeactivity.checkpointermain += 1,
-                    "LogicalApplyMain" => pgwaittypeactivity.logicalapplymain += 1,
-                    "LogicalLauncherMain" => pgwaittypeactivity.logicallaunchermain += 1,
-                    "LogicalParallelApplyMain" => pgwaittypeactivity.logicalparallelapplymain += 1,
-                    "RecoveryWalStream" => pgwaittypeactivity.recoverywalstream += 1,
-                    "SysLoggerMain" => pgwaittypeactivity.sysloggermain += 1,
-                    "WalReceiverMain" => pgwaittypeactivity.walreceivermain += 1,
-                    "WalSenderMain" => pgwaittypeactivity.walsendermain += 1,
-                    "WalWriterMain" => pgwaittypeactivity.walwritermain += 1,
-                    &_ => {}
+                    "archivermain" => pgwaittypeactivity.archivermain += 1,
+                    "autovacuummain" => pgwaittypeactivity.autovacuummain += 1,
+                    "bgwriterhibernate" => pgwaittypeactivity.bgwriterhibernate += 1,
+                    "bgwritermain" => pgwaittypeactivity.bgwritermain += 1,
+                    "checkpointermain" => pgwaittypeactivity.checkpointermain += 1,
+                    "logicalapplymain" => pgwaittypeactivity.logicalapplymain += 1,
+                    "logicallaunchermain" => pgwaittypeactivity.logicallaunchermain += 1,
+                    "logicalparallelapplymain" => pgwaittypeactivity.logicalparallelapplymain += 1,
+                    "recoverywalstream" => pgwaittypeactivity.recoverywalstream += 1,
+                    "sysloggermain" => pgwaittypeactivity.sysloggermain += 1,
+                    "walreceivermain" => pgwaittypeactivity.walreceivermain += 1,
+                    "walsendermain" => pgwaittypeactivity.walsendermain += 1,
+                    "walwritermain" => pgwaittypeactivity.walwritermain += 1,
+                    &_ => pgwaittypeactivity.other += 1,
                 };
             });
         pgwaittypeactivity
@@ -267,7 +271,8 @@ impl PgWaitTypeActivity {
 }
 #[derive(Debug, Default)]
 pub struct PgWaitTypeBufferPin {
-    bufferpin: usize,
+    pub bufferpin: usize,
+    pub other: usize,
 }
 impl PgWaitTypeBufferPin {
     pub async fn new() -> Self {
@@ -279,12 +284,15 @@ impl PgWaitTypeBufferPin {
         let mut pgwaittypebufferpin = PgWaitTypeBufferPin::new().await;
         pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type == Some("BufferPin".to_string()))
+            .filter(|r| {
+                r.wait_event_type == Some("bufferpin".to_string())
+                    && r.state.as_ref().unwrap_or(&"".to_string()) == "active"
+            })
             .map(|r| r.wait_event.clone())
             .for_each(|r| {
                 match r.unwrap_or_default().as_ref() {
-                    "BufferPin" => pgwaittypebufferpin.bufferpin += 1,
-                    &_ => {}
+                    "bufferpin" => pgwaittypebufferpin.bufferpin += 1,
+                    &_ => pgwaittypebufferpin.other += 1,
                 };
             });
         pgwaittypebufferpin
@@ -292,14 +300,15 @@ impl PgWaitTypeBufferPin {
 }
 #[derive(Debug, Default)]
 pub struct PgWaitTypeClient {
-    clientread: usize,
-    clientwrite: usize,
-    gssopenserver: usize,
-    libpqwalreceiverconnect: usize,
-    libpqwalreceiverreceive: usize,
-    sslopenserver: usize,
-    walsenderwaitforwal: usize,
-    walsenderwritedata: usize,
+    pub clientread: usize,
+    pub clientwrite: usize,
+    pub gssopenserver: usize,
+    pub libpqwalreceiverconnect: usize,
+    pub libpqwalreceiverreceive: usize,
+    pub sslopenserver: usize,
+    pub walsenderwaitforwal: usize,
+    pub walsenderwritedata: usize,
+    pub other: usize,
 }
 impl PgWaitTypeClient {
     pub async fn new() -> Self {
@@ -311,19 +320,22 @@ impl PgWaitTypeClient {
         let mut pgwaittypeclient = PgWaitTypeClient::new().await;
         pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type == Some("Client".to_string()))
+            .filter(|r| {
+                r.wait_event_type == Some("client".to_string())
+                    && r.state.as_ref().unwrap_or(&"".to_string()) == "active"
+            })
             .map(|r| r.wait_event.clone())
             .for_each(|r| {
                 match r.unwrap_or_default().as_ref() {
-                    "ClientRead" => pgwaittypeclient.clientread += 1,
-                    "ClientWrite" => pgwaittypeclient.clientwrite += 1,
-                    "GSSOpenServer" => pgwaittypeclient.gssopenserver += 1,
-                    "LibPQWalReceiverConnect" => pgwaittypeclient.libpqwalreceiverconnect += 1,
-                    "LibPQWalReceiverReceive" => pgwaittypeclient.libpqwalreceiverreceive += 1,
-                    "SSLOpenServer" => pgwaittypeclient.sslopenserver += 1,
-                    "WalSenderWaitForWal" => pgwaittypeclient.walsenderwaitforwal += 1,
-                    "WalSenderWriteData" => pgwaittypeclient.walsenderwritedata += 1,
-                    &_ => {}
+                    "clientread" => pgwaittypeclient.clientread += 1,
+                    "clientwrite" => pgwaittypeclient.clientwrite += 1,
+                    "gssopenserver" => pgwaittypeclient.gssopenserver += 1,
+                    "libpqwalreceiverconnect" => pgwaittypeclient.libpqwalreceiverconnect += 1,
+                    "Libpqwalreceiverreceive" => pgwaittypeclient.libpqwalreceiverreceive += 1,
+                    "sslopenserver" => pgwaittypeclient.sslopenserver += 1,
+                    "walsenderwaitforwal" => pgwaittypeclient.walsenderwaitforwal += 1,
+                    "walsenderwritedata" => pgwaittypeclient.walsenderwritedata += 1,
+                    &_ => pgwaittypeclient.other += 1,
                 };
             });
         pgwaittypeclient
@@ -331,7 +343,8 @@ impl PgWaitTypeClient {
 }
 #[derive(Debug, Default)]
 pub struct PgWaitTypeExtension {
-    extension: usize,
+    pub extension: usize,
+    pub other: usize,
 }
 impl PgWaitTypeExtension {
     pub async fn new() -> Self {
@@ -343,12 +356,15 @@ impl PgWaitTypeExtension {
         let mut pgwaittypeextension = PgWaitTypeExtension::new().await;
         pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type == Some("Extension".to_string()))
+            .filter(|r| {
+                r.wait_event_type == Some("extension".to_string())
+                    && r.state.as_ref().unwrap_or(&"".to_string()) == "active"
+            })
             .map(|r| r.wait_event.clone())
             .for_each(|r| {
                 match r.unwrap_or_default().as_ref() {
-                    "Extension" => pgwaittypeextension.extension += 1,
-                    &_ => {}
+                    "extension" => pgwaittypeextension.extension += 1,
+                    &_ => pgwaittypeextension.other += 1,
                 };
             });
         pgwaittypeextension
@@ -356,81 +372,82 @@ impl PgWaitTypeExtension {
 }
 #[derive(Debug, Default)]
 pub struct PgWaitTypeIO {
-    basebackupread: usize,
-    basebackupsync: usize,
-    basebackupwrite: usize,
-    buffileread: usize,
-    buffiletruncate: usize,
-    buffilewrite: usize,
-    controlfileread: usize,
-    controlfilesync: usize,
-    controlfilesyncupdate: usize,
-    controlfilewrite: usize,
-    controlfilewriteupdate: usize,
-    copyfileread: usize,
-    copyfilewrite: usize,
-    dsmallocate: usize,
-    dsmfillzerowrite: usize,
-    datafileextend: usize,
-    datafileflush: usize,
-    datafileimmediatesync: usize,
-    datafileprefetch: usize,
-    datafileread: usize,
-    datafilesync: usize,
-    datafiletruncate: usize,
-    datafilewrite: usize,
-    lockfileaddtodatadirread: usize,
-    lockfileaddtodatadirsync: usize,
-    lockfileaddtodatadirwrite: usize,
-    lockfilecreateread: usize,
-    lockfilecreatesync: usize,
-    lockfilecreatewrite: usize,
-    lockfilerecheckdatadirread: usize,
-    logicalrewritecheckpointsync: usize,
-    logicalrewritemappingsync: usize,
-    logicalrewritemappingwrite: usize,
-    logicalrewritesync: usize,
-    logicalrewritetruncate: usize,
-    logicalrewritewrite: usize,
-    relationmapread: usize,
-    relationmapreplace: usize,
-    relationmapwrite: usize,
-    reorderbufferread: usize,
-    reorderbufferwrite: usize,
-    reorderlogicalmappingread: usize,
-    replicationslotread: usize,
-    replicationslotrestoresync: usize,
-    replicationslotsync: usize,
-    replicationslotwrite: usize,
-    slruflushsync: usize,
-    slruread: usize,
-    slrusync: usize,
-    slruwrite: usize,
-    snapbuildread: usize,
-    snapbuildsync: usize,
-    snapbuildwrite: usize,
-    timelinehistoryfilesync: usize,
-    timelinehistoryfilewrite: usize,
-    timelinehistoryread: usize,
-    timelinehistorysync: usize,
-    timelinehistorywrite: usize,
-    twophasefileread: usize,
-    twophasefilesync: usize,
-    twophasefilewrite: usize,
-    versionfilesync: usize,
-    versionfilewrite: usize,
-    walbootstrapsync: usize,
-    walbootstrapwrite: usize,
-    walcopyread: usize,
-    walcopysync: usize,
-    walcopywrite: usize,
-    walinitsync: usize,
-    walinitwrite: usize,
-    walread: usize,
-    walsendertimelinehistoryread: usize,
-    walsync: usize,
-    walsyncmethodassign: usize,
-    walwrite: usize,
+    pub basebackupread: usize,
+    pub basebackupsync: usize,
+    pub basebackupwrite: usize,
+    pub buffileread: usize,
+    pub buffiletruncate: usize,
+    pub buffilewrite: usize,
+    pub controlfileread: usize,
+    pub controlfilesync: usize,
+    pub controlfilesyncupdate: usize,
+    pub controlfilewrite: usize,
+    pub controlfilewriteupdate: usize,
+    pub copyfileread: usize,
+    pub copyfilewrite: usize,
+    pub dsmallocate: usize,
+    pub dsmfillzerowrite: usize,
+    pub datafileextend: usize,
+    pub datafileflush: usize,
+    pub datafileimmediatesync: usize,
+    pub datafileprefetch: usize,
+    pub datafileread: usize,
+    pub datafilesync: usize,
+    pub datafiletruncate: usize,
+    pub datafilewrite: usize,
+    pub lockfileaddtodatadirread: usize,
+    pub lockfileaddtodatadirsync: usize,
+    pub lockfileaddtodatadirwrite: usize,
+    pub lockfilecreateread: usize,
+    pub lockfilecreatesync: usize,
+    pub lockfilecreatewrite: usize,
+    pub lockfilerecheckdatadirread: usize,
+    pub logicalrewritecheckpointsync: usize,
+    pub logicalrewritemappingsync: usize,
+    pub logicalrewritemappingwrite: usize,
+    pub logicalrewritesync: usize,
+    pub logicalrewritetruncate: usize,
+    pub logicalrewritewrite: usize,
+    pub relationmapread: usize,
+    pub relationmapreplace: usize,
+    pub relationmapwrite: usize,
+    pub reorderbufferread: usize,
+    pub reorderbufferwrite: usize,
+    pub reorderlogicalmappingread: usize,
+    pub replicationslotread: usize,
+    pub replicationslotrestoresync: usize,
+    pub replicationslotsync: usize,
+    pub replicationslotwrite: usize,
+    pub slruflushsync: usize,
+    pub slruread: usize,
+    pub slrusync: usize,
+    pub slruwrite: usize,
+    pub snapbuildread: usize,
+    pub snapbuildsync: usize,
+    pub snapbuildwrite: usize,
+    pub timelinehistoryfilesync: usize,
+    pub timelinehistoryfilewrite: usize,
+    pub timelinehistoryread: usize,
+    pub timelinehistorysync: usize,
+    pub timelinehistorywrite: usize,
+    pub twophasefileread: usize,
+    pub twophasefilesync: usize,
+    pub twophasefilewrite: usize,
+    pub versionfilesync: usize,
+    pub versionfilewrite: usize,
+    pub walbootstrapsync: usize,
+    pub walbootstrapwrite: usize,
+    pub walcopyread: usize,
+    pub walcopysync: usize,
+    pub walcopywrite: usize,
+    pub walinitsync: usize,
+    pub walinitwrite: usize,
+    pub walread: usize,
+    pub walsendertimelinehistoryread: usize,
+    pub walsync: usize,
+    pub walsyncmethodassign: usize,
+    pub walwrite: usize,
+    pub other: usize,
 }
 impl PgWaitTypeIO {
     pub async fn new() -> Self {
@@ -440,90 +457,93 @@ impl PgWaitTypeIO {
         let mut pgwaittypeio = PgWaitTypeIO::new().await;
         pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type == Some("IO".to_string()))
+            .filter(|r| {
+                r.wait_event_type == Some("io".to_string())
+                    && r.state.as_ref().unwrap_or(&"".to_string()) == "active"
+            })
             .map(|r| r.wait_event.clone())
             .for_each(|r| {
                 match r.unwrap_or_default().as_ref() {
-                    "BaseBackupRead" => pgwaittypeio.basebackupread += 1,
-                    "BaseBackupSync" => pgwaittypeio.basebackupsync += 1,
-                    "BaseBackupWrite" => pgwaittypeio.basebackupwrite += 1,
-                    "BufFileRead" => pgwaittypeio.buffileread += 1,
-                    "BufFileTruncate" => pgwaittypeio.buffiletruncate += 1,
-                    "BufFileWrite" => pgwaittypeio.buffilewrite += 1,
-                    "ControlFileRead" => pgwaittypeio.controlfileread += 1,
-                    "ControlFileSync" => pgwaittypeio.controlfilesync += 1,
-                    "ControlFileSyncUpdate" => pgwaittypeio.controlfilesyncupdate += 1,
-                    "ControlFileWrite" => pgwaittypeio.controlfilewrite += 1,
-                    "ControlFileWriteUpdate" => pgwaittypeio.controlfilewriteupdate += 1,
-                    "CopyFileRead" => pgwaittypeio.copyfileread += 1,
-                    "CopyFileWrite" => pgwaittypeio.copyfilewrite += 1,
-                    "DSMAllocate" => pgwaittypeio.dsmallocate += 1,
-                    "DSMFillZeroWrite" => pgwaittypeio.dsmfillzerowrite += 1,
-                    "DataFileExtend" => pgwaittypeio.datafileextend += 1,
-                    "DataFileFlush" => pgwaittypeio.datafileflush += 1,
-                    "DataFileImmediateSync" => pgwaittypeio.datafileimmediatesync += 1,
-                    "DataFilePrefetch" => pgwaittypeio.datafileprefetch += 1,
-                    "DataFileRead" => pgwaittypeio.datafileread += 1,
-                    "DataFileSync" => pgwaittypeio.datafilesync += 1,
-                    "DataFileTruncate" => pgwaittypeio.datafiletruncate += 1,
-                    "DataFileWrite" => pgwaittypeio.datafilewrite += 1,
-                    "LockFileAddToDataDirRead" => pgwaittypeio.lockfileaddtodatadirread += 1,
-                    "LockFileAddToDataDirSync" => pgwaittypeio.lockfileaddtodatadirsync += 1,
-                    "LockFileAddToDataDirWrite" => pgwaittypeio.lockfileaddtodatadirwrite += 1,
-                    "LockFileCreateRead" => pgwaittypeio.lockfilecreateread += 1,
-                    "LockFileCreateSync" => pgwaittypeio.lockfilecreatesync += 1,
-                    "LockFileCreateWrite" => pgwaittypeio.lockfilecreatewrite += 1,
-                    "LockFileReCheckDataDirRead" => pgwaittypeio.lockfilerecheckdatadirread += 1,
-                    "LogicalRewriteCheckpointSync" => {
+                    "basebackupread" => pgwaittypeio.basebackupread += 1,
+                    "basebackupsync" => pgwaittypeio.basebackupsync += 1,
+                    "basebackupwrite" => pgwaittypeio.basebackupwrite += 1,
+                    "buffileread" => pgwaittypeio.buffileread += 1,
+                    "buffiletruncate" => pgwaittypeio.buffiletruncate += 1,
+                    "buffilewrite" => pgwaittypeio.buffilewrite += 1,
+                    "controlfileread" => pgwaittypeio.controlfileread += 1,
+                    "controlfilesync" => pgwaittypeio.controlfilesync += 1,
+                    "controlfilesyncupdate" => pgwaittypeio.controlfilesyncupdate += 1,
+                    "controlfilewrite" => pgwaittypeio.controlfilewrite += 1,
+                    "controlfilewriteupdate" => pgwaittypeio.controlfilewriteupdate += 1,
+                    "copyfileread" => pgwaittypeio.copyfileread += 1,
+                    "copyfilewrite" => pgwaittypeio.copyfilewrite += 1,
+                    "dsmallocate" => pgwaittypeio.dsmallocate += 1,
+                    "dsmfillzerowrite" => pgwaittypeio.dsmfillzerowrite += 1,
+                    "datafileextend" => pgwaittypeio.datafileextend += 1,
+                    "datafileflush" => pgwaittypeio.datafileflush += 1,
+                    "datafileimmediatesync" => pgwaittypeio.datafileimmediatesync += 1,
+                    "datafileprefetch" => pgwaittypeio.datafileprefetch += 1,
+                    "datafileread" => pgwaittypeio.datafileread += 1,
+                    "datafilesync" => pgwaittypeio.datafilesync += 1,
+                    "datafiletruncate" => pgwaittypeio.datafiletruncate += 1,
+                    "datafilewrite" => pgwaittypeio.datafilewrite += 1,
+                    "lockfileaddtodatadirread" => pgwaittypeio.lockfileaddtodatadirread += 1,
+                    "lockfileaddtodatadirsync" => pgwaittypeio.lockfileaddtodatadirsync += 1,
+                    "lockfileaddtodatadirwrite" => pgwaittypeio.lockfileaddtodatadirwrite += 1,
+                    "lockfilecreateread" => pgwaittypeio.lockfilecreateread += 1,
+                    "lockfilecreatesync" => pgwaittypeio.lockfilecreatesync += 1,
+                    "lockfilecreatewrite" => pgwaittypeio.lockfilecreatewrite += 1,
+                    "lockfilerecheckdatadirread" => pgwaittypeio.lockfilerecheckdatadirread += 1,
+                    "logicalrewritecheckpointsync" => {
                         pgwaittypeio.logicalrewritecheckpointsync += 1
                     }
-                    "LogicalRewriteMappingSync" => pgwaittypeio.logicalrewritemappingsync += 1,
-                    "LogicalRewriteMappingWrite" => pgwaittypeio.logicalrewritemappingwrite += 1,
-                    "LogicalRewriteSync" => pgwaittypeio.logicalrewritesync += 1,
-                    "LogicalRewriteTruncate" => pgwaittypeio.logicalrewritetruncate += 1,
-                    "LogicalRewriteWrite" => pgwaittypeio.logicalrewritewrite += 1,
-                    "RelationMapRead" => pgwaittypeio.relationmapread += 1,
-                    "RelationMapReplace" => pgwaittypeio.relationmapreplace += 1,
-                    "RelationMapWrite" => pgwaittypeio.relationmapwrite += 1,
-                    "ReorderBufferRead" => pgwaittypeio.reorderbufferread += 1,
-                    "ReorderBufferWrite" => pgwaittypeio.reorderbufferwrite += 1,
-                    "ReorderLogicalMappingRead" => pgwaittypeio.reorderlogicalmappingread += 1,
-                    "ReplicationSlotRead" => pgwaittypeio.replicationslotread += 1,
-                    "ReplicationSlotRestoreSync" => pgwaittypeio.replicationslotrestoresync += 1,
-                    "ReplicationSlotSync" => pgwaittypeio.replicationslotsync += 1,
-                    "ReplicationSlotWrite" => pgwaittypeio.replicationslotwrite += 1,
-                    "SLRUFlushSync" => pgwaittypeio.slruflushsync += 1,
-                    "SLRURead" => pgwaittypeio.slruread += 1,
-                    "SLRUSync" => pgwaittypeio.slrusync += 1,
-                    "SLRUWrite" => pgwaittypeio.slruwrite += 1,
-                    "SnapbuildRead" => pgwaittypeio.snapbuildread += 1,
-                    "SnapbuildSync" => pgwaittypeio.snapbuildsync += 1,
-                    "SnapbuildWrite" => pgwaittypeio.snapbuildwrite += 1,
-                    "TimeLineHistoryFileSync" => pgwaittypeio.timelinehistoryfilesync += 1,
-                    "TimeLineHistoryFileWrite" => pgwaittypeio.timelinehistoryfilewrite += 1,
-                    "TimeLineHistoryRead" => pgwaittypeio.timelinehistoryread += 1,
-                    "TimeLineHistorySync" => pgwaittypeio.timelinehistorysync += 1,
-                    "TimeLineHistoryWrite" => pgwaittypeio.timelinehistorywrite += 1,
-                    "TwophaseFileRead" => pgwaittypeio.twophasefileread += 1,
-                    "TwophaseFileSync" => pgwaittypeio.twophasefilesync += 1,
-                    "TwophaseFileWrite" => pgwaittypeio.twophasefilewrite += 1,
-                    "VersionFileSync" => pgwaittypeio.versionfilesync += 1,
-                    "VersionFileWrite" => pgwaittypeio.versionfilewrite += 1,
-                    "WalBootstrapSync" => pgwaittypeio.walbootstrapsync += 1,
-                    "WalBootstrapWrite" => pgwaittypeio.walbootstrapwrite += 1,
-                    "WalCopyRead" => pgwaittypeio.walcopyread += 1,
-                    "WalCopySync" => pgwaittypeio.walcopysync += 1,
-                    "WalCopyWrite" => pgwaittypeio.walcopywrite += 1,
-                    "WalInitSync" => pgwaittypeio.walinitsync += 1,
-                    "WalInitWrite" => pgwaittypeio.walinitwrite += 1,
-                    "WalRead" => pgwaittypeio.walread += 1,
-                    "WalSenderTimelineHistoryRead" => {
+                    "logicalrewritemappingsync" => pgwaittypeio.logicalrewritemappingsync += 1,
+                    "logicalrewritemappingwrite" => pgwaittypeio.logicalrewritemappingwrite += 1,
+                    "logicalrewritesync" => pgwaittypeio.logicalrewritesync += 1,
+                    "logicalrewritetruncate" => pgwaittypeio.logicalrewritetruncate += 1,
+                    "logicalrewritewrite" => pgwaittypeio.logicalrewritewrite += 1,
+                    "relationmapread" => pgwaittypeio.relationmapread += 1,
+                    "relationmapreplace" => pgwaittypeio.relationmapreplace += 1,
+                    "relationmapwrite" => pgwaittypeio.relationmapwrite += 1,
+                    "reorderbufferread" => pgwaittypeio.reorderbufferread += 1,
+                    "reorderbufferwrite" => pgwaittypeio.reorderbufferwrite += 1,
+                    "reorderlogicalmappingread" => pgwaittypeio.reorderlogicalmappingread += 1,
+                    "replicationslotread" => pgwaittypeio.replicationslotread += 1,
+                    "replicationslotrestoresync" => pgwaittypeio.replicationslotrestoresync += 1,
+                    "replicationslotsync" => pgwaittypeio.replicationslotsync += 1,
+                    "replicationslotwrite" => pgwaittypeio.replicationslotwrite += 1,
+                    "slruflushsync" => pgwaittypeio.slruflushsync += 1,
+                    "slruread" => pgwaittypeio.slruread += 1,
+                    "slrusync" => pgwaittypeio.slrusync += 1,
+                    "slruwrite" => pgwaittypeio.slruwrite += 1,
+                    "snapbuildread" => pgwaittypeio.snapbuildread += 1,
+                    "snapbuildsync" => pgwaittypeio.snapbuildsync += 1,
+                    "snapbuildwrite" => pgwaittypeio.snapbuildwrite += 1,
+                    "timelinehistoryfilesync" => pgwaittypeio.timelinehistoryfilesync += 1,
+                    "timelinehistoryfilewrite" => pgwaittypeio.timelinehistoryfilewrite += 1,
+                    "timelinehistoryread" => pgwaittypeio.timelinehistoryread += 1,
+                    "timelinehistorysync" => pgwaittypeio.timelinehistorysync += 1,
+                    "timelinehistorywrite" => pgwaittypeio.timelinehistorywrite += 1,
+                    "twophasefileread" => pgwaittypeio.twophasefileread += 1,
+                    "twophasefilesync" => pgwaittypeio.twophasefilesync += 1,
+                    "twophasefilewrite" => pgwaittypeio.twophasefilewrite += 1,
+                    "versionfilesync" => pgwaittypeio.versionfilesync += 1,
+                    "versionfilewrite" => pgwaittypeio.versionfilewrite += 1,
+                    "walbootstrapsync" => pgwaittypeio.walbootstrapsync += 1,
+                    "walbootstrapwrite" => pgwaittypeio.walbootstrapwrite += 1,
+                    "walcopyread" => pgwaittypeio.walcopyread += 1,
+                    "walcopysync" => pgwaittypeio.walcopysync += 1,
+                    "walcopywrite" => pgwaittypeio.walcopywrite += 1,
+                    "walinitsync" => pgwaittypeio.walinitsync += 1,
+                    "walinitwrite" => pgwaittypeio.walinitwrite += 1,
+                    "walread" => pgwaittypeio.walread += 1,
+                    "walsendertimelinehistoryread" => {
                         pgwaittypeio.walsendertimelinehistoryread += 1
                     }
-                    "WalSync" => pgwaittypeio.walsync += 1,
-                    "WalSyncMethodAssign" => pgwaittypeio.walsyncmethodassign += 1,
-                    "WalWrite" => pgwaittypeio.walwrite += 1,
-                    &_ => {}
+                    "walsync" => pgwaittypeio.walsync += 1,
+                    "walsyncmethodassign" => pgwaittypeio.walsyncmethodassign += 1,
+                    "walwrite" => pgwaittypeio.walwrite += 1,
+                    &_ => pgwaittypeio.other += 1,
                 };
             });
         pgwaittypeio
@@ -531,59 +551,60 @@ impl PgWaitTypeIO {
 }
 #[derive(Debug, Default)]
 pub struct PgWaitTypeIPC {
-    appendready: usize,
-    archivecleanupcommand: usize,
-    archivecommand: usize,
-    backendtermination: usize,
-    backupwaitwalarchive: usize,
-    bgworkershutdown: usize,
-    bgworkerstartup: usize,
-    btreepage: usize,
-    bufferio: usize,
-    checkpointdone: usize,
-    checkpointstart: usize,
-    executegather: usize,
-    hashbatchallocate: usize,
-    hashbatchelect: usize,
-    hashbatchload: usize,
-    hashbuildallocate: usize,
-    hashbuildelect: usize,
-    hashbuildhashinner: usize,
-    hashbuildhashouter: usize,
-    hashgrowbatchesdecide: usize,
-    hashgrowbatcheselect: usize,
-    hashgrowbatchesfinish: usize,
-    hashgrowbatchesreallocate: usize,
-    hashgrowbatchesrepartition: usize,
-    hashgrowbucketselect: usize,
-    hashgrowbucketsreallocate: usize,
-    hashgrowbucketsreinsert: usize,
-    logicalapplysenddata: usize,
-    logicalparallelapplystatechange: usize,
-    logicalsyncdata: usize,
-    logicalsyncstatechange: usize,
-    messagequeueinternal: usize,
-    messagequeueputmessage: usize,
-    messagequeuereceive: usize,
-    messagequeuesend: usize,
-    parallelbitmapscan: usize,
-    parallelcreateindexscan: usize,
-    parallelfinish: usize,
-    procarraygroupupdate: usize,
-    procsignalbarrier: usize,
-    promote: usize,
-    recoveryconflictsnapshot: usize,
-    recoveryconflicttablespace: usize,
-    recoveryendcommand: usize,
-    recoverypause: usize,
-    replicationorigindrop: usize,
-    replicationslotdrop: usize,
-    restorecommand: usize,
-    safesnapshot: usize,
-    syncrep: usize,
-    walreceiverexit: usize,
-    walreceiverwaitstart: usize,
-    xactgroupupdate: usize,
+    pub appendready: usize,
+    pub archivecleanupcommand: usize,
+    pub archivecommand: usize,
+    pub backendtermination: usize,
+    pub backupwaitwalarchive: usize,
+    pub bgworkershutdown: usize,
+    pub bgworkerstartup: usize,
+    pub btreepage: usize,
+    pub bufferio: usize,
+    pub checkpointdone: usize,
+    pub checkpointstart: usize,
+    pub executegather: usize,
+    pub hashbatchallocate: usize,
+    pub hashbatchelect: usize,
+    pub hashbatchload: usize,
+    pub hashbuildallocate: usize,
+    pub hashbuildelect: usize,
+    pub hashbuildhashinner: usize,
+    pub hashbuildhashouter: usize,
+    pub hashgrowbatchesdecide: usize,
+    pub hashgrowbatcheselect: usize,
+    pub hashgrowbatchesfinish: usize,
+    pub hashgrowbatchesreallocate: usize,
+    pub hashgrowbatchesrepartition: usize,
+    pub hashgrowbucketselect: usize,
+    pub hashgrowbucketsreallocate: usize,
+    pub hashgrowbucketsreinsert: usize,
+    pub logicalapplysenddata: usize,
+    pub logicalparallelapplystatechange: usize,
+    pub logicalsyncdata: usize,
+    pub logicalsyncstatechange: usize,
+    pub messagequeueinternal: usize,
+    pub messagequeueputmessage: usize,
+    pub messagequeuereceive: usize,
+    pub messagequeuesend: usize,
+    pub parallelbitmapscan: usize,
+    pub parallelcreateindexscan: usize,
+    pub parallelfinish: usize,
+    pub procarraygroupupdate: usize,
+    pub procsignalbarrier: usize,
+    pub promote: usize,
+    pub recoveryconflictsnapshot: usize,
+    pub recoveryconflicttablespace: usize,
+    pub recoveryendcommand: usize,
+    pub recoverypause: usize,
+    pub replicationorigindrop: usize,
+    pub replicationslotdrop: usize,
+    pub restorecommand: usize,
+    pub safesnapshot: usize,
+    pub syncrep: usize,
+    pub walreceiverexit: usize,
+    pub walreceiverwaitstart: usize,
+    pub xactgroupupdate: usize,
+    pub other: usize,
 }
 impl PgWaitTypeIPC {
     pub async fn new() -> Self {
@@ -593,66 +614,69 @@ impl PgWaitTypeIPC {
         let mut pgwaittypeipc = PgWaitTypeIPC::new().await;
         pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type == Some("IPC".to_string()))
+            .filter(|r| {
+                r.wait_event_type == Some("ipc".to_string())
+                    && r.state.as_ref().unwrap_or(&"".to_string()) == "active"
+            })
             .map(|r| r.wait_event.clone())
             .for_each(|r| {
                 match r.unwrap_or_default().as_ref() {
-                    "AppendReady" => pgwaittypeipc.appendready += 1,
-                    "ArchiveCleanupCommand" => pgwaittypeipc.archivecleanupcommand += 1,
-                    "ArchiveCommand" => pgwaittypeipc.archivecommand += 1,
-                    "BackendTermination" => pgwaittypeipc.backendtermination += 1,
-                    "BackupWaitWalArchive" => pgwaittypeipc.backupwaitwalarchive += 1,
-                    "BgWorkerShutdown" => pgwaittypeipc.bgworkershutdown += 1,
-                    "BgWorkerStartup" => pgwaittypeipc.bgworkerstartup += 1,
-                    "BtreePage" => pgwaittypeipc.btreepage += 1,
-                    "BufferIO" => pgwaittypeipc.bufferio += 1,
-                    "CheckpointDone" => pgwaittypeipc.checkpointdone += 1,
-                    "CheckpointStart" => pgwaittypeipc.checkpointstart += 1,
-                    "ExecuteGather" => pgwaittypeipc.executegather += 1,
-                    "HashBatchAllocate" => pgwaittypeipc.hashbatchallocate += 1,
-                    "HashBatchElect" => pgwaittypeipc.hashbatchelect += 1,
-                    "HashBatchLoad" => pgwaittypeipc.hashbatchload += 1,
-                    "HashBuildAllocate" => pgwaittypeipc.hashbuildallocate += 1,
-                    "HashBuildElect" => pgwaittypeipc.hashbuildelect += 1,
-                    "HashBuildHashInner" => pgwaittypeipc.hashbuildhashinner += 1,
-                    "HashBuildHashOuter" => pgwaittypeipc.hashbuildhashouter += 1,
-                    "HashGrowBatchesDecide" => pgwaittypeipc.hashgrowbatchesdecide += 1,
-                    "HashGrowBatchesElect" => pgwaittypeipc.hashgrowbatcheselect += 1,
-                    "HashGrowBatchesFinish" => pgwaittypeipc.hashgrowbatchesfinish += 1,
-                    "HashGrowBatchesReallocate" => pgwaittypeipc.hashgrowbatchesreallocate += 1,
-                    "HashGrowBatchesRepartition" => pgwaittypeipc.hashgrowbatchesrepartition += 1,
-                    "HashGrowBucketsElect" => pgwaittypeipc.hashgrowbucketselect += 1,
-                    "HashGrowBucketsReallocate" => pgwaittypeipc.hashgrowbucketsreallocate += 1,
-                    "HashGrowBucketsReinsert" => pgwaittypeipc.hashgrowbucketsreinsert += 1,
-                    "LogicalApplySendData" => pgwaittypeipc.logicalapplysenddata += 1,
-                    "LogicalParallelApplyStateChange" => {
+                    "appendready" => pgwaittypeipc.appendready += 1,
+                    "archivecleanupcommand" => pgwaittypeipc.archivecleanupcommand += 1,
+                    "archivecommand" => pgwaittypeipc.archivecommand += 1,
+                    "backendtermination" => pgwaittypeipc.backendtermination += 1,
+                    "backupwaitwalarchive" => pgwaittypeipc.backupwaitwalarchive += 1,
+                    "bgworkershutdown" => pgwaittypeipc.bgworkershutdown += 1,
+                    "bgworkerstartup" => pgwaittypeipc.bgworkerstartup += 1,
+                    "btreepage" => pgwaittypeipc.btreepage += 1,
+                    "bufferio" => pgwaittypeipc.bufferio += 1,
+                    "checkpointdone" => pgwaittypeipc.checkpointdone += 1,
+                    "checkpointstart" => pgwaittypeipc.checkpointstart += 1,
+                    "executegather" => pgwaittypeipc.executegather += 1,
+                    "hashbatchallocate" => pgwaittypeipc.hashbatchallocate += 1,
+                    "hashbatchelect" => pgwaittypeipc.hashbatchelect += 1,
+                    "hashbatchload" => pgwaittypeipc.hashbatchload += 1,
+                    "hashbuildallocate" => pgwaittypeipc.hashbuildallocate += 1,
+                    "hashbuildelect" => pgwaittypeipc.hashbuildelect += 1,
+                    "hashbuildhashinner" => pgwaittypeipc.hashbuildhashinner += 1,
+                    "hashbuildhashouter" => pgwaittypeipc.hashbuildhashouter += 1,
+                    "hashgrowbatchesdecide" => pgwaittypeipc.hashgrowbatchesdecide += 1,
+                    "hashgrowbatcheselect" => pgwaittypeipc.hashgrowbatcheselect += 1,
+                    "hashgrowbatchesfinish" => pgwaittypeipc.hashgrowbatchesfinish += 1,
+                    "hashgrowbatchesreallocate" => pgwaittypeipc.hashgrowbatchesreallocate += 1,
+                    "hashgrowbatchesrepartition" => pgwaittypeipc.hashgrowbatchesrepartition += 1,
+                    "hashgrowbucketselect" => pgwaittypeipc.hashgrowbucketselect += 1,
+                    "hashgrowbucketsreallocate" => pgwaittypeipc.hashgrowbucketsreallocate += 1,
+                    "hashgrowbucketsreinsert" => pgwaittypeipc.hashgrowbucketsreinsert += 1,
+                    "logicalapplysenddata" => pgwaittypeipc.logicalapplysenddata += 1,
+                    "logicalparallelapplystatechange" => {
                         pgwaittypeipc.logicalparallelapplystatechange += 1
                     }
-                    "LogicalSyncData" => pgwaittypeipc.logicalsyncdata += 1,
-                    "LogicalSyncStateChange" => pgwaittypeipc.logicalsyncstatechange += 1,
-                    "MessageQueueInternal" => pgwaittypeipc.messagequeueinternal += 1,
-                    "MessageQueuePutMessage" => pgwaittypeipc.messagequeueputmessage += 1,
-                    "MessageQueueReceive" => pgwaittypeipc.messagequeuereceive += 1,
-                    "MessageQueueSend" => pgwaittypeipc.messagequeuesend += 1,
-                    "ParallelBitmapScan" => pgwaittypeipc.parallelbitmapscan += 1,
-                    "ParallelCreateIndexScan" => pgwaittypeipc.parallelcreateindexscan += 1,
-                    "ParallelFinish" => pgwaittypeipc.parallelfinish += 1,
-                    "ProcArrayGroupUpdate" => pgwaittypeipc.procarraygroupupdate += 1,
-                    "ProcSignalBarrier" => pgwaittypeipc.procsignalbarrier += 1,
-                    "Promote" => pgwaittypeipc.promote += 1,
-                    "RecoveryConflictSnapshot" => pgwaittypeipc.recoveryconflictsnapshot += 1,
-                    "RecoveryConflictTablespace" => pgwaittypeipc.recoveryconflicttablespace += 1,
-                    "RecoveryEndCommand" => pgwaittypeipc.recoveryendcommand += 1,
-                    "RecoveryPause" => pgwaittypeipc.recoverypause += 1,
-                    "ReplicationOriginDrop" => pgwaittypeipc.replicationorigindrop += 1,
-                    "ReplicationSlotDrop" => pgwaittypeipc.replicationslotdrop += 1,
-                    "RestoreCommand" => pgwaittypeipc.restorecommand += 1,
-                    "SafeSnapshot" => pgwaittypeipc.safesnapshot += 1,
-                    "SyncRep" => pgwaittypeipc.syncrep += 1,
-                    "WalReceiverExit" => pgwaittypeipc.walreceiverexit += 1,
-                    "WalReceiverWaitStart" => pgwaittypeipc.walreceiverwaitstart += 1,
-                    "XactGroupUpdate" => pgwaittypeipc.xactgroupupdate += 1,
-                    &_ => {}
+                    "logicalsyncdata" => pgwaittypeipc.logicalsyncdata += 1,
+                    "logicalsyncstatechange" => pgwaittypeipc.logicalsyncstatechange += 1,
+                    "messagequeueinternal" => pgwaittypeipc.messagequeueinternal += 1,
+                    "messagequeueputmessage" => pgwaittypeipc.messagequeueputmessage += 1,
+                    "messagequeuereceive" => pgwaittypeipc.messagequeuereceive += 1,
+                    "messagequeuesend" => pgwaittypeipc.messagequeuesend += 1,
+                    "parallelbitmapscan" => pgwaittypeipc.parallelbitmapscan += 1,
+                    "parallelcreateindexscan" => pgwaittypeipc.parallelcreateindexscan += 1,
+                    "parallelfinish" => pgwaittypeipc.parallelfinish += 1,
+                    "procarraygroupupdate" => pgwaittypeipc.procarraygroupupdate += 1,
+                    "procsignalbarrier" => pgwaittypeipc.procsignalbarrier += 1,
+                    "promote" => pgwaittypeipc.promote += 1,
+                    "recoveryconflictsnapshot" => pgwaittypeipc.recoveryconflictsnapshot += 1,
+                    "recoveryconflicttablespace" => pgwaittypeipc.recoveryconflicttablespace += 1,
+                    "recoveryendcommand" => pgwaittypeipc.recoveryendcommand += 1,
+                    "recoverypause" => pgwaittypeipc.recoverypause += 1,
+                    "replicationorigindrop" => pgwaittypeipc.replicationorigindrop += 1,
+                    "replicationslotdrop" => pgwaittypeipc.replicationslotdrop += 1,
+                    "restorecommand" => pgwaittypeipc.restorecommand += 1,
+                    "safesnapshot" => pgwaittypeipc.safesnapshot += 1,
+                    "syncrep" => pgwaittypeipc.syncrep += 1,
+                    "walreceiverexit" => pgwaittypeipc.walreceiverexit += 1,
+                    "walreceiverwaitstart" => pgwaittypeipc.walreceiverwaitstart += 1,
+                    "xactgroupupdate" => pgwaittypeipc.xactgroupupdate += 1,
+                    &_ => pgwaittypeipc.other += 1,
                 };
             });
         pgwaittypeipc
@@ -660,18 +684,19 @@ impl PgWaitTypeIPC {
 }
 #[derive(Debug, Default)]
 pub struct PgWaitTypeLock {
-    advisory: usize,
-    applytransaction: usize,
-    extend: usize,
-    frozenid: usize,
-    object: usize,
-    page: usize,
-    relation: usize,
-    spectoken: usize,
-    transactionid: usize,
-    tuple: usize,
-    userlock: usize,
-    virtualxid: usize,
+    pub advisory: usize,
+    pub applytransaction: usize,
+    pub extend: usize,
+    pub frozenid: usize,
+    pub object: usize,
+    pub page: usize,
+    pub relation: usize,
+    pub spectoken: usize,
+    pub transactionid: usize,
+    pub tuple: usize,
+    pub userlock: usize,
+    pub virtualxid: usize,
+    pub other: usize,
 }
 impl PgWaitTypeLock {
     pub async fn new() -> Self {
@@ -681,7 +706,10 @@ impl PgWaitTypeLock {
         let mut pgwaittypelock = PgWaitTypeLock::new().await;
         pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type == Some("Lock".to_string()))
+            .filter(|r| {
+                r.wait_event_type == Some("lock".to_string())
+                    && r.state.as_ref().unwrap_or(&"".to_string()) == "active"
+            })
             .map(|r| r.wait_event.clone())
             .for_each(|r| {
                 match r.unwrap_or_default().as_ref() {
@@ -697,7 +725,7 @@ impl PgWaitTypeLock {
                     "tuple" => pgwaittypelock.tuple += 1,
                     "userlock" => pgwaittypelock.userlock += 1,
                     "virtualxid" => pgwaittypelock.virtualxid += 1,
-                    &_ => {}
+                    &_ => pgwaittypelock.other += 1,
                 };
             });
         pgwaittypelock
@@ -705,80 +733,81 @@ impl PgWaitTypeLock {
 }
 #[derive(Debug, Default)]
 pub struct PgWaitTypeLWLock {
-    addinsheminit: usize,
-    autofile: usize,
-    autovacuum: usize,
-    autovacuumschedule: usize,
-    backgroundworker: usize,
-    btreevacuum: usize,
-    buffercontent: usize,
-    buffermapping: usize,
-    checkpointercomm: usize,
-    committs: usize,
-    committsbuffer: usize,
-    committsslru: usize,
-    controlfile: usize,
-    dynamicsharedmemorycontrol: usize,
-    lockfastpath: usize,
-    lockmanager: usize,
-    logicalreplauncerdsa: usize,
-    logicalreplauncerhash: usize,
-    logicalrepworker: usize,
-    multixactgen: usize,
-    multixactmemberbuffer: usize,
-    multixactmemberslru: usize,
-    multixactoffsetbuffer: usize,
-    multixactoffsetslru: usize,
-    multixacttruncation: usize,
-    notifybuffer: usize,
-    notifyqueue: usize,
-    notifyqueuetail: usize,
-    notifyslru: usize,
-    oidgen: usize,
-    oldsnapshottimemap: usize,
-    parallelappend: usize,
-    parallelhashjoin: usize,
-    parallelquerydsa: usize,
-    persessiondsa: usize,
-    persessionrecordtype: usize,
-    persessionrecordtypmod: usize,
-    perxactpredicatelist: usize,
-    pgstatsdata: usize,
-    pgstatsdsa: usize,
-    pgstatshash: usize,
-    predicatelockmanager: usize,
-    procarray: usize,
-    relationmapping: usize,
-    relcacheinit: usize,
-    replicationorigin: usize,
-    replicationoriginstate: usize,
-    replicationslotallocation: usize,
-    replicationslotcontrol: usize,
-    replicationslotio: usize,
-    serialbuffer: usize,
-    serializablefinishedlist: usize,
-    serializablepredicatelist: usize,
-    serializablexacthash: usize,
-    serialslru: usize,
-    sharedtidbitmap: usize,
-    sharedtuplestore: usize,
-    shmemindex: usize,
-    sinvalread: usize,
-    sinvalwrite: usize,
-    subtransbuffer: usize,
-    subtransslru: usize,
-    syncrep: usize,
-    syncscan: usize,
-    tablespacecreate: usize,
-    twophasestate: usize,
-    walbufmapping: usize,
-    walinsert: usize,
-    walwrite: usize,
-    wraplimitsvacuum: usize,
-    xactbuffer: usize,
-    xactslru: usize,
-    xacttruncation: usize,
-    xidgen: usize,
+    pub addinsheminit: usize,
+    pub autofile: usize,
+    pub autovacuum: usize,
+    pub autovacuumschedule: usize,
+    pub backgroundworker: usize,
+    pub btreevacuum: usize,
+    pub buffercontent: usize,
+    pub buffermapping: usize,
+    pub checkpointercomm: usize,
+    pub committs: usize,
+    pub committsbuffer: usize,
+    pub committsslru: usize,
+    pub controlfile: usize,
+    pub dynamicsharedmemorycontrol: usize,
+    pub lockfastpath: usize,
+    pub lockmanager: usize,
+    pub logicalreplauncherdsa: usize,
+    pub logicalreplauncherhash: usize,
+    pub logicalrepworker: usize,
+    pub multixactgen: usize,
+    pub multixactmemberbuffer: usize,
+    pub multixactmemberslru: usize,
+    pub multixactoffsetbuffer: usize,
+    pub multixactoffsetslru: usize,
+    pub multixacttruncation: usize,
+    pub notifybuffer: usize,
+    pub notifyqueue: usize,
+    pub notifyqueuetail: usize,
+    pub notifyslru: usize,
+    pub oidgen: usize,
+    pub oldsnapshottimemap: usize,
+    pub parallelappend: usize,
+    pub parallelhashjoin: usize,
+    pub parallelquerydsa: usize,
+    pub persessiondsa: usize,
+    pub persessionrecordtype: usize,
+    pub persessionrecordtypmod: usize,
+    pub perxactpredicatelist: usize,
+    pub pgstatsdata: usize,
+    pub pgstatsdsa: usize,
+    pub pgstatshash: usize,
+    pub predicatelockmanager: usize,
+    pub procarray: usize,
+    pub relationmapping: usize,
+    pub relcacheinit: usize,
+    pub replicationorigin: usize,
+    pub replicationoriginstate: usize,
+    pub replicationslotallocation: usize,
+    pub replicationslotcontrol: usize,
+    pub replicationslotio: usize,
+    pub serialbuffer: usize,
+    pub serializablefinishedlist: usize,
+    pub serializablepredicatelist: usize,
+    pub serializablexacthash: usize,
+    pub serialslru: usize,
+    pub sharedtidbitmap: usize,
+    pub sharedtuplestore: usize,
+    pub shmemindex: usize,
+    pub sinvalread: usize,
+    pub sinvalwrite: usize,
+    pub subtransbuffer: usize,
+    pub subtransslru: usize,
+    pub syncrep: usize,
+    pub syncscan: usize,
+    pub tablespacecreate: usize,
+    pub twophasestate: usize,
+    pub walbufmapping: usize,
+    pub walinsert: usize,
+    pub walwrite: usize,
+    pub wraplimitsvacuum: usize,
+    pub xactbuffer: usize,
+    pub xactslru: usize,
+    pub xacttruncation: usize,
+    pub xidgen: usize,
+    pub other: usize,
 }
 impl PgWaitTypeLWLock {
     pub async fn new() -> Self {
@@ -790,87 +819,90 @@ impl PgWaitTypeLWLock {
         let mut pgwaittypelwlock = PgWaitTypeLWLock::new().await;
         pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type == Some("LWLock".to_string()))
+            .filter(|r| {
+                r.wait_event_type == Some("lwlock".to_string())
+                    && r.state.as_ref().unwrap_or(&"".to_string()) == "active"
+            })
             .map(|r| r.wait_event.clone())
             .for_each(|r| {
                 match r.unwrap_or_default().as_ref() {
-                    "AddinShmemInit" => pgwaittypelwlock.addinsheminit += 1,
-                    "AutoFile" => pgwaittypelwlock.autofile += 1,
-                    "Autovacuum" => pgwaittypelwlock.autovacuum += 1,
-                    "AutovacuumSchedule" => pgwaittypelwlock.autovacuumschedule += 1,
-                    "BackgroundWorker" => pgwaittypelwlock.backgroundworker += 1,
-                    "BtreeVacuum" => pgwaittypelwlock.btreevacuum += 1,
-                    "BufferContent" => pgwaittypelwlock.buffercontent += 1,
-                    "BufferMapping" => pgwaittypelwlock.buffermapping += 1,
-                    "CheckpointerComm" => pgwaittypelwlock.checkpointercomm += 1,
-                    "CommitTs" => pgwaittypelwlock.committs += 1,
-                    "CommitTsBuffer" => pgwaittypelwlock.committsbuffer += 1,
-                    "CommitTsSLRU" => pgwaittypelwlock.committsslru += 1,
-                    "ControlFile" => pgwaittypelwlock.controlfile += 1,
-                    "DynamicSharedMemoryControl" => {
+                    "addinshmeminit" => pgwaittypelwlock.addinsheminit += 1,
+                    "autofile" => pgwaittypelwlock.autofile += 1,
+                    "autovacuum" => pgwaittypelwlock.autovacuum += 1,
+                    "autovacuumschedule" => pgwaittypelwlock.autovacuumschedule += 1,
+                    "backgroundworker" => pgwaittypelwlock.backgroundworker += 1,
+                    "btreevacuum" => pgwaittypelwlock.btreevacuum += 1,
+                    "buffercontent" => pgwaittypelwlock.buffercontent += 1,
+                    "buffermapping" => pgwaittypelwlock.buffermapping += 1,
+                    "checkpointercomm" => pgwaittypelwlock.checkpointercomm += 1,
+                    "committs" => pgwaittypelwlock.committs += 1,
+                    "committsbuffer" => pgwaittypelwlock.committsbuffer += 1,
+                    "committsslru" => pgwaittypelwlock.committsslru += 1,
+                    "controlfile" => pgwaittypelwlock.controlfile += 1,
+                    "dynamicsharedmemorycontrol" => {
                         pgwaittypelwlock.dynamicsharedmemorycontrol += 1
                     }
-                    "LockFastPath" => pgwaittypelwlock.lockfastpath += 1,
-                    "LockManager" => pgwaittypelwlock.lockmanager += 1,
-                    "LogicalRepLauncerDSA" => pgwaittypelwlock.logicalreplauncerdsa += 1,
-                    "LogicalRepLauncerHash" => pgwaittypelwlock.logicalreplauncerhash += 1,
-                    "LogicalRepWorker" => pgwaittypelwlock.logicalrepworker += 1,
-                    "MultiXactGen" => pgwaittypelwlock.multixactgen += 1,
-                    "MultiXactMemberBuffer" => pgwaittypelwlock.multixactmemberbuffer += 1,
-                    "MultiXactMemberSLRU" => pgwaittypelwlock.multixactmemberslru += 1,
-                    "MultiXactOffsetBuffer" => pgwaittypelwlock.multixactoffsetbuffer += 1,
-                    "MultiXactOffsetSLRU" => pgwaittypelwlock.multixactoffsetslru += 1,
-                    "MultiXactTruncation" => pgwaittypelwlock.multixacttruncation += 1,
-                    "NotifyBuffer" => pgwaittypelwlock.notifybuffer += 1,
-                    "NotifyQueue" => pgwaittypelwlock.notifyqueue += 1,
-                    "NotifyQueueTail" => pgwaittypelwlock.notifyqueuetail += 1,
-                    "NotifySLRU" => pgwaittypelwlock.notifyslru += 1,
-                    "OidGen" => pgwaittypelwlock.oidgen += 1,
-                    "OldSnapshotTimeMap" => pgwaittypelwlock.oldsnapshottimemap += 1,
-                    "ParallelAppend" => pgwaittypelwlock.parallelappend += 1,
-                    "ParallelHashJoin" => pgwaittypelwlock.parallelhashjoin += 1,
-                    "ParallelQueryDSA" => pgwaittypelwlock.parallelquerydsa += 1,
-                    "PerSessionDSA" => pgwaittypelwlock.persessiondsa += 1,
-                    "PerSessionRecordType" => pgwaittypelwlock.persessionrecordtype += 1,
-                    "PerSessionRecordTypMod" => pgwaittypelwlock.persessionrecordtypmod += 1,
-                    "PerXactPredicateList" => pgwaittypelwlock.perxactpredicatelist += 1,
-                    "PgStatsData" => pgwaittypelwlock.pgstatsdata += 1,
-                    "PgStatsDSA" => pgwaittypelwlock.pgstatsdsa += 1,
-                    "PgStatsHash" => pgwaittypelwlock.pgstatshash += 1,
-                    "PredicateLockManager" => pgwaittypelwlock.predicatelockmanager += 1,
-                    "ProcArray" => pgwaittypelwlock.procarray += 1,
-                    "RelationMapping" => pgwaittypelwlock.relationmapping += 1,
-                    "RelCacheInit" => pgwaittypelwlock.relcacheinit += 1,
-                    "ReplicationOrigin" => pgwaittypelwlock.replicationorigin += 1,
-                    "ReplicationOriginState" => pgwaittypelwlock.replicationoriginstate += 1,
-                    "ReplicationSlotAllocation" => pgwaittypelwlock.replicationslotallocation += 1,
-                    "ReplicationSlotControl" => pgwaittypelwlock.replicationslotcontrol += 1,
-                    "ReplicationSlotIO" => pgwaittypelwlock.replicationslotio += 1,
-                    "SerialBuffer" => pgwaittypelwlock.serialbuffer += 1,
-                    "SerializableFinishedList" => pgwaittypelwlock.serializablefinishedlist += 1,
-                    "SerializablePredicateList" => pgwaittypelwlock.serializablepredicatelist += 1,
-                    "SerializableXactHash" => pgwaittypelwlock.serializablexacthash += 1,
-                    "SerialSLRU" => pgwaittypelwlock.serialslru += 1,
-                    "SharedTidBitmap" => pgwaittypelwlock.sharedtidbitmap += 1,
-                    "SharedTupleStore" => pgwaittypelwlock.sharedtuplestore += 1,
-                    "ShmemIndex" => pgwaittypelwlock.shmemindex += 1,
-                    "SInvalRead" => pgwaittypelwlock.sinvalread += 1,
-                    "SInvalWrite" => pgwaittypelwlock.sinvalwrite += 1,
-                    "SubtransBuffer" => pgwaittypelwlock.subtransbuffer += 1,
-                    "SubtransSLRU" => pgwaittypelwlock.subtransslru += 1,
-                    "SyncRep" => pgwaittypelwlock.syncrep += 1,
-                    "SyncScan" => pgwaittypelwlock.syncscan += 1,
-                    "TablespaceCreate" => pgwaittypelwlock.tablespacecreate += 1,
-                    "TwoPhaseState" => pgwaittypelwlock.twophasestate += 1,
-                    "WALBufMapping" => pgwaittypelwlock.walbufmapping += 1,
-                    "WALInsert" => pgwaittypelwlock.walinsert += 1,
-                    "WALWrite" => pgwaittypelwlock.walwrite += 1,
-                    "WrapLimitsVacuum" => pgwaittypelwlock.wraplimitsvacuum += 1,
-                    "XactBuffer" => pgwaittypelwlock.xactbuffer += 1,
-                    "XactSLRU" => pgwaittypelwlock.xactslru += 1,
-                    "XactTruncation" => pgwaittypelwlock.xacttruncation += 1,
-                    "XidGen" => pgwaittypelwlock.xidgen += 1,
-                    &_ => {}
+                    "lockfastpath" => pgwaittypelwlock.lockfastpath += 1,
+                    "lockmanager" => pgwaittypelwlock.lockmanager += 1,
+                    "logicalreplauncerdsa" => pgwaittypelwlock.logicalreplauncherdsa += 1,
+                    "logicalreplauncerhash" => pgwaittypelwlock.logicalreplauncherhash += 1,
+                    "logicalrepworker" => pgwaittypelwlock.logicalrepworker += 1,
+                    "multixactgen" => pgwaittypelwlock.multixactgen += 1,
+                    "multixactmemberbuffer" => pgwaittypelwlock.multixactmemberbuffer += 1,
+                    "multixactmemberslru" => pgwaittypelwlock.multixactmemberslru += 1,
+                    "multixactoffsetbuffer" => pgwaittypelwlock.multixactoffsetbuffer += 1,
+                    "multixactoffsetslru" => pgwaittypelwlock.multixactoffsetslru += 1,
+                    "multixacttruncation" => pgwaittypelwlock.multixacttruncation += 1,
+                    "notifybuffer" => pgwaittypelwlock.notifybuffer += 1,
+                    "notifyqueue" => pgwaittypelwlock.notifyqueue += 1,
+                    "notifyqueuetail" => pgwaittypelwlock.notifyqueuetail += 1,
+                    "notifyslru" => pgwaittypelwlock.notifyslru += 1,
+                    "oidgen" => pgwaittypelwlock.oidgen += 1,
+                    "oldsnapshottimemap" => pgwaittypelwlock.oldsnapshottimemap += 1,
+                    "parallelappend" => pgwaittypelwlock.parallelappend += 1,
+                    "parallelhashjoin" => pgwaittypelwlock.parallelhashjoin += 1,
+                    "parallelquerydsa" => pgwaittypelwlock.parallelquerydsa += 1,
+                    "persessiondsa" => pgwaittypelwlock.persessiondsa += 1,
+                    "persessionrecordtype" => pgwaittypelwlock.persessionrecordtype += 1,
+                    "persessionrecordtypmod" => pgwaittypelwlock.persessionrecordtypmod += 1,
+                    "perxactpredicatelist" => pgwaittypelwlock.perxactpredicatelist += 1,
+                    "pgstatsdata" => pgwaittypelwlock.pgstatsdata += 1,
+                    "pgstatsdsa" => pgwaittypelwlock.pgstatsdsa += 1,
+                    "pgstatshash" => pgwaittypelwlock.pgstatshash += 1,
+                    "predicatelockmanager" => pgwaittypelwlock.predicatelockmanager += 1,
+                    "procarray" => pgwaittypelwlock.procarray += 1,
+                    "relationmapping" => pgwaittypelwlock.relationmapping += 1,
+                    "relcacheinit" => pgwaittypelwlock.relcacheinit += 1,
+                    "replicationorigin" => pgwaittypelwlock.replicationorigin += 1,
+                    "replicationoriginstate" => pgwaittypelwlock.replicationoriginstate += 1,
+                    "replicationslotallocation" => pgwaittypelwlock.replicationslotallocation += 1,
+                    "replicationslotcontrol" => pgwaittypelwlock.replicationslotcontrol += 1,
+                    "replicationslotio" => pgwaittypelwlock.replicationslotio += 1,
+                    "serialbuffer" => pgwaittypelwlock.serialbuffer += 1,
+                    "serializablefinishedlist" => pgwaittypelwlock.serializablefinishedlist += 1,
+                    "serializablepredicatelist" => pgwaittypelwlock.serializablepredicatelist += 1,
+                    "serializablexacthash" => pgwaittypelwlock.serializablexacthash += 1,
+                    "serialslru" => pgwaittypelwlock.serialslru += 1,
+                    "sharedtidbitmap" => pgwaittypelwlock.sharedtidbitmap += 1,
+                    "sharedtuplestore" => pgwaittypelwlock.sharedtuplestore += 1,
+                    "shmemindex" => pgwaittypelwlock.shmemindex += 1,
+                    "sinvalread" => pgwaittypelwlock.sinvalread += 1,
+                    "sinvalwrite" => pgwaittypelwlock.sinvalwrite += 1,
+                    "subtransbuffer" => pgwaittypelwlock.subtransbuffer += 1,
+                    "subtransslru" => pgwaittypelwlock.subtransslru += 1,
+                    "syncrep" => pgwaittypelwlock.syncrep += 1,
+                    "syncscan" => pgwaittypelwlock.syncscan += 1,
+                    "tablespacecreate" => pgwaittypelwlock.tablespacecreate += 1,
+                    "twophasestate" => pgwaittypelwlock.twophasestate += 1,
+                    "walbufmapping" => pgwaittypelwlock.walbufmapping += 1,
+                    "walinsert" => pgwaittypelwlock.walinsert += 1,
+                    "walwrite" => pgwaittypelwlock.walwrite += 1,
+                    "wraplimitsvacuum" => pgwaittypelwlock.wraplimitsvacuum += 1,
+                    "xactbuffer" => pgwaittypelwlock.xactbuffer += 1,
+                    "xactslru" => pgwaittypelwlock.xactslru += 1,
+                    "xacttruncation" => pgwaittypelwlock.xacttruncation += 1,
+                    "xidgen" => pgwaittypelwlock.xidgen += 1,
+                    &_ => pgwaittypelwlock.other += 1,
                 };
             });
         pgwaittypelwlock
@@ -878,15 +910,16 @@ impl PgWaitTypeLWLock {
 }
 #[derive(Debug, Default)]
 pub struct PgWaitTypeTimeout {
-    basebackupthrottle: usize,
-    checkpointerwritedelay: usize,
-    pgsleep: usize,
-    recoveryapplydelay: usize,
-    recoveryretrieveretryinterval: usize,
-    registersyncrequest: usize,
-    spindelay: usize,
-    vacuumdelay: usize,
-    vacuumtruncate: usize,
+    pub basebackupthrottle: usize,
+    pub checkpointerwritedelay: usize,
+    pub pgsleep: usize,
+    pub recoveryapplydelay: usize,
+    pub recoveryretrieveretryinterval: usize,
+    pub registersyncrequest: usize,
+    pub spindelay: usize,
+    pub vacuumdelay: usize,
+    pub vacuumtruncate: usize,
+    pub other: usize,
 }
 impl PgWaitTypeTimeout {
     pub async fn new() -> Self {
@@ -898,22 +931,25 @@ impl PgWaitTypeTimeout {
         let mut pgwaittypetimeout = PgWaitTypeTimeout::new().await;
         pg_stat_activity
             .iter()
-            .filter(|r| r.wait_event_type == Some("Timeout".to_string()))
+            .filter(|r| {
+                r.wait_event_type == Some("timeout".to_string())
+                    && r.state.as_ref().unwrap_or(&"".to_string()) == "active"
+            })
             .map(|r| r.wait_event.clone())
             .for_each(|r| {
                 match r.unwrap_or_default().as_ref() {
-                    "BaseBackupThrottle" => pgwaittypetimeout.basebackupthrottle += 1,
-                    "CheckpoinWriteDelay" => pgwaittypetimeout.checkpointerwritedelay += 1,
-                    "PgSleep" => pgwaittypetimeout.pgsleep += 1,
-                    "RecoveryApplyDelay" => pgwaittypetimeout.recoveryapplydelay += 1,
-                    "RecoveryRetrieveRetryInterval" => {
+                    "basebackupthrottle" => pgwaittypetimeout.basebackupthrottle += 1,
+                    "checkpoinwritedelay" => pgwaittypetimeout.checkpointerwritedelay += 1,
+                    "pgsleep" => pgwaittypetimeout.pgsleep += 1,
+                    "recoveryapplydelay" => pgwaittypetimeout.recoveryapplydelay += 1,
+                    "recoveryretrieveretryinterval" => {
                         pgwaittypetimeout.recoveryretrieveretryinterval += 1
                     }
-                    "RegisterSyncRequest" => pgwaittypetimeout.registersyncrequest += 1,
-                    "SpinDelay" => pgwaittypetimeout.spindelay += 1,
-                    "VacuumDelay" => pgwaittypetimeout.vacuumdelay += 1,
-                    "VacuumTruncate" => pgwaittypetimeout.vacuumtruncate += 1,
-                    &_ => {}
+                    "registersyncrequest" => pgwaittypetimeout.registersyncrequest += 1,
+                    "spindelay" => pgwaittypetimeout.spindelay += 1,
+                    "vacuumdelay" => pgwaittypetimeout.vacuumdelay += 1,
+                    "vacuumtruncate" => pgwaittypetimeout.vacuumtruncate += 1,
+                    &_ => pgwaittypetimeout.other += 1,
                 };
             });
         pgwaittypetimeout
@@ -1673,7 +1709,6 @@ pub async fn processor_main() -> Result<()> {
     loop {
         interval.tick().await;
 
-        println!("tick");
         PgStatActivity::fetch_and_add_to_data(&pool).await;
         PgStatDatabase::fetch_and_add_to_data(&pool).await;
         PgStatBgWriter::fetch_and_add_to_data(&pool).await;
@@ -1700,6 +1735,6 @@ pub async fn processor_main() -> Result<()> {
         //    pg_database.iter().map(|r| r.age_datfrozenxid).max()
         //);
         //println!("{:#?}", DELTATABLE.read().await);
-        println!("{:?}", DATA.wait_event_activity.read().await);
+        //println!("{:?}", DATA.wait_event_activity.read().await);
     }
 }

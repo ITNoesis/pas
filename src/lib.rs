@@ -56,7 +56,7 @@ pub struct Opts {
         short = 'W',
         long,
         value_name = "graph buffer width",
-        default_value = "1800"
+        default_value = "1500"
     )]
     pub graph_width: u32,
     /// graph buffer heighth
@@ -64,7 +64,7 @@ pub struct Opts {
         short = 'H',
         long,
         value_name = "graph buffer height",
-        default_value = "1200"
+        default_value = "800"
     )]
     pub graph_height: u32,
 }
