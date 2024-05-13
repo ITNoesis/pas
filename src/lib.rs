@@ -4,9 +4,12 @@ use clap::Parser;
 use once_cell::sync::Lazy;
 //use std::sync::RwLock;
 use chrono::{DateTime, Local};
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
+pub mod archiver;
 pub mod processor;
+pub mod reader;
 pub mod webserver;
 
 use processor::PgCurrentWaitTypes;
@@ -43,6 +46,9 @@ pub struct Opts {
         default_value = "10800"
     )]
     pub history: usize,
+    /// Enable webserver
+    #[arg(short = 'w', long, value_name = "enable webserver")]
+    pub webserver: bool,
     /// Webserver port
     #[arg(
         short = 'P',
@@ -51,6 +57,17 @@ pub struct Opts {
         default_value = "1112"
     )]
     pub webserver_port: u64,
+    /// Enable archiver
+    #[arg(short = 'A', long, value_name = "enable archiver")]
+    pub archiver: bool,
+    /// Archiver interval
+    #[arg(
+        short = 'I',
+        long,
+        value_name = "archiver interval (minutes)",
+        default_value = "10"
+    )]
+    pub archiver_interval: i64,
     /// graph buffer width
     #[arg(
         short = 'W',
@@ -67,6 +84,9 @@ pub struct Opts {
         default_value = "800"
     )]
     pub graph_height: u32,
+    /// Read history file(s), don't do active fetching
+    #[arg(short = 'r', long, value_name = "read archives")]
+    pub read: Option<String>,
 }
 
 pub static ARGS: Lazy<Opts> = Lazy::new(Opts::parse);
@@ -110,6 +130,25 @@ impl Data {
             pg_database_xid_limits: RwLock::new(BoundedVecDeque::new(history)),
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct DataTransit {
+    pub pg_stat_activity: Vec<(DateTime<Local>, Vec<PgStatActivity>)>,
+    pub wait_event_types: Vec<(DateTime<Local>, PgCurrentWaitTypes)>,
+    pub wait_event_activity: Vec<(DateTime<Local>, PgWaitTypeActivity)>,
+    pub wait_event_bufferpin: Vec<(DateTime<Local>, PgWaitTypeBufferPin)>,
+    pub wait_event_client: Vec<(DateTime<Local>, PgWaitTypeClient)>,
+    pub wait_event_extension: Vec<(DateTime<Local>, PgWaitTypeExtension)>,
+    pub wait_event_io: Vec<(DateTime<Local>, PgWaitTypeIO)>,
+    pub wait_event_ipc: Vec<(DateTime<Local>, PgWaitTypeIPC)>,
+    pub wait_event_lock: Vec<(DateTime<Local>, PgWaitTypeLock)>,
+    pub wait_event_lwlock: Vec<(DateTime<Local>, PgWaitTypeLWLock)>,
+    pub wait_event_timeout: Vec<(DateTime<Local>, PgWaitTypeTimeout)>,
+    pub pg_stat_database_sum: Vec<(DateTime<Local>, PgStatDatabaseSum)>,
+    pub pg_stat_bgwriter_sum: Vec<(DateTime<Local>, PgStatBgWriterSum)>,
+    pub pg_stat_wal_sum: Vec<(DateTime<Local>, PgStatWalSum)>,
+    pub pg_database_xid_limits: Vec<(DateTime<Local>, PgDatabaseXidLimits)>,
 }
 
 pub static DATA: Lazy<Data> = Lazy::new(|| Data::new(Opts::parse().history));

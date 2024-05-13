@@ -1,6 +1,7 @@
 use anyhow::Result;
-//use sqlx::{FromRow, postgres::{types::PgInterval, PgConnection}, Connection};
-//use chrono::{DateTime, Duration, Utc};
+use chrono::Local;
+use futures::executor::block_on;
+use pas::ARGS;
 use std::time::Duration;
 
 /*
@@ -18,14 +19,15 @@ use ratatui::{
 use std::io::stdout;
 */
 
-use std::process;
+use pas::archiver::{archiver_main, save_to_disk};
 use pas::processor::processor_main;
-use pas::webserver::webserver;
+use pas::reader::reader_main;
+use pas::webserver::webserver_main;
+use std::process;
 use tokio::time;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
     /*
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
@@ -36,20 +38,20 @@ async fn main() -> Result<()> {
     ////
     loop {
         let mut sql_rows: Vec<PgStatActivity> = sqlx::query_as(
-            "select pid, 
-                    datname, 
-                    usename, 
-                    application_name, 
-                    clock_timestamp()-query_start as query_time, 
-                    clock_timestamp()-state_change as state_time, 
-                    state, 
+            "select pid,
+                    datname,
+                    usename,
+                    application_name,
+                    clock_timestamp()-query_start as query_time,
+                    clock_timestamp()-state_change as state_time,
+                    state,
                     wait_event_type,
                     wait_event,
-                    backend_type, 
-                    query_id, 
-                    query 
-             from pg_stat_activity 
-             where pid != pg_backend_pid() 
+                    backend_type,
+                    query_id,
+                    query
+             from pg_stat_activity
+             where pid != pg_backend_pid()
              and state != 'idle'"
         ).fetch_all(&mut connection).await.expect("Error executiong query");
         sql_rows.sort_by_key(|a| a.query_time.as_ref().map_or(0_i64, |r| r.microseconds));
@@ -82,7 +84,7 @@ async fn main() -> Result<()> {
                 Row::new({
                     let wait_event = r.wait_event.as_ref().unwrap_or(&"".to_string()).to_string();
                     vec![
-                        r.pid.to_string().clone(), 
+                        r.pid.to_string().clone(),
                         r.datname.as_ref().unwrap_or(&"".to_string()).to_string(),
                         r.usename.as_ref().unwrap_or(&"".to_string()).to_string(),
                         r.application_name.as_ref().unwrap_or(&"".to_string()).to_string(),
@@ -94,9 +96,9 @@ async fn main() -> Result<()> {
                         r.query.as_ref().unwrap_or(&"".to_string()).to_string(),
                     ]})
                     .style(color)
-                }) 
+                })
             .collect::<Vec<_>>();
-                
+
         let widths = [
             Constraint::Length(6),    // pid
             Constraint::Length(14),   // datname
@@ -131,31 +133,73 @@ async fn main() -> Result<()> {
     stdout().execute(LeaveAlternateScreen)?;
     disable_raw_mode()?;
     */
-    tokio::spawn( async move {
-        match processor_main().await {
-            Ok(_) => {},
-            Err(error) => {
-                eprintln!("{:?}", error);
-                process::exit(1);
+    ctrlc::set_handler(move || {
+        println!("SIGINT received, terminating");
+        let mut return_value = 0;
+        if ARGS.archiver {
+            match block_on(save_to_disk(Local::now())) {
+                Ok(_) => {}
+                Err(error) => {
+                    return_value = 1;
+                    eprintln!("{:?}", error);
+                }
             }
         }
-    });
+        process::exit(return_value);
+    })
+    .unwrap();
 
-    tokio::spawn( async move {
-        match webserver().await {
-            Ok(_) => {},
-            Err(error) => {
-                eprintln!("{:?}", error);
-                process::exit(1);
+    if ARGS.read.is_none() {
+        tokio::spawn(async move {
+            match processor_main().await {
+                Ok(_) => {}
+                Err(error) => {
+                    eprintln!("{:?}", error);
+                    process::exit(1);
+                }
             }
-        }
-    });
+        });
+    };
+
+    if ARGS.webserver {
+        tokio::spawn(async move {
+            match webserver_main().await {
+                Ok(_) => {}
+                Err(error) => {
+                    eprintln!("{:?}", error);
+                    process::exit(1);
+                }
+            }
+        });
+    };
+
+    if ARGS.archiver {
+        tokio::spawn(async move {
+            match archiver_main().await {
+                Ok(_) => {}
+                Err(error) => {
+                    eprintln!("{:?}", error);
+                    process::exit(1);
+                }
+            }
+        });
+    };
+
+    if ARGS.read.is_some() {
+        tokio::spawn(async move {
+            match reader_main().await {
+                Ok(_) => {}
+                Err(error) => {
+                    eprintln!("{:?}", error);
+                    process::exit(1);
+                }
+            }
+        });
+    };
 
     let mut interval = time::interval(Duration::from_secs(1));
-    //for _ in 0..10 {
     loop {
         interval.tick().await;
-        //println!("{:?}", DATA.wait_event_types.read().await)
     }
 
     //Ok(())

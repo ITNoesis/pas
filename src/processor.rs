@@ -5,11 +5,10 @@ use anyhow::Result;
 use bigdecimal::ToPrimitive;
 use chrono::{DateTime, Local};
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use sqlx::{
-    postgres::{types::Oid, types::PgInterval, PgPoolOptions},
-    query_as,
-    types::BigDecimal,
-    FromRow, Pool,
+    postgres::{types::Oid, PgPoolOptions},
+    query_as, FromRow, Pool,
 };
 use std::{collections::HashMap, time::Duration};
 use tokio::{
@@ -18,7 +17,7 @@ use tokio::{
 };
 
 // this pg_stat_activity is consistent with postgres version 15
-#[derive(Debug, FromRow, Clone)]
+#[derive(Debug, FromRow, Clone, Serialize, Deserialize)]
 pub struct PgStatActivity {
     pub timestamp: DateTime<Local>,
     pub datid: Option<Oid>,
@@ -31,10 +30,10 @@ pub struct PgStatActivity {
     pub client_addr: Option<String>,
     pub client_hostname: Option<String>,
     pub client_port: Option<i32>,
-    pub backend_time: Option<PgInterval>,
-    pub xact_time: Option<PgInterval>,
-    pub query_time: Option<PgInterval>,
-    pub state_time: Option<PgInterval>,
+    pub backend_time: Option<i64>,
+    pub xact_time: Option<i64>,
+    pub query_time: Option<i64>,
+    pub state_time: Option<i64>,
     pub wait_event_type: Option<String>,
     pub wait_event: Option<String>,
     pub state: Option<String>,
@@ -108,10 +107,10 @@ impl PgStatActivity {
                    client_addr,
                    client_hostname,
                    client_port,
-                   clock_timestamp()-backend_start as backend_time, 
-                   clock_timestamp()-xact_start as xact_time, 
-                   clock_timestamp()-query_start as query_time, 
-                   clock_timestamp()-state_change as state_time, 
+                   cast(extract(epoch from (clock_timestamp()-backend_start)) as bigint) as backend_time,
+                   cast(extract(epoch from (clock_timestamp()-xact_start)) as bigint) as xact_time,
+                   cast(extract(epoch from (clock_timestamp()-query_start)) as bigint) as query_time,
+                   cast(extract(epoch from (clock_timestamp()-state_change)) as bigint) as state_time,
                    lower(wait_event_type) as wait_event_type,
                    lower(wait_event) as wait_event,
                    state, 
@@ -127,13 +126,13 @@ impl PgStatActivity {
         .fetch_all(pool)
         .await
         .expect("error executing query");
-        sql_rows.sort_by_key(|a| a.query_time.as_ref().map_or(0_i64, |r| r.microseconds));
+        sql_rows.sort_by_key(|a| *a.query_time.as_ref().unwrap_or(&0_i64));
         sql_rows.reverse();
         sql_rows
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PgCurrentWaitTypes {
     pub on_cpu: usize,
     pub activity: usize,
@@ -216,7 +215,7 @@ impl PgCurrentWaitTypes {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PgWaitTypeActivity {
     pub archivermain: usize,
     pub autovacuummain: usize,
@@ -269,7 +268,7 @@ impl PgWaitTypeActivity {
         pgwaittypeactivity
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PgWaitTypeBufferPin {
     pub bufferpin: usize,
     pub other: usize,
@@ -298,7 +297,7 @@ impl PgWaitTypeBufferPin {
         pgwaittypebufferpin
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PgWaitTypeClient {
     pub clientread: usize,
     pub clientwrite: usize,
@@ -341,7 +340,7 @@ impl PgWaitTypeClient {
         pgwaittypeclient
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PgWaitTypeExtension {
     pub extension: usize,
     pub other: usize,
@@ -370,7 +369,7 @@ impl PgWaitTypeExtension {
         pgwaittypeextension
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PgWaitTypeIO {
     pub basebackupread: usize,
     pub basebackupsync: usize,
@@ -549,7 +548,7 @@ impl PgWaitTypeIO {
         pgwaittypeio
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PgWaitTypeIPC {
     pub appendready: usize,
     pub archivecleanupcommand: usize,
@@ -682,7 +681,7 @@ impl PgWaitTypeIPC {
         pgwaittypeipc
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PgWaitTypeLock {
     pub advisory: usize,
     pub applytransaction: usize,
@@ -731,7 +730,7 @@ impl PgWaitTypeLock {
         pgwaittypelock
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PgWaitTypeLWLock {
     pub addinsheminit: usize,
     pub autofile: usize,
@@ -908,7 +907,7 @@ impl PgWaitTypeLWLock {
         pgwaittypelwlock
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PgWaitTypeTimeout {
     pub basebackupthrottle: usize,
     pub checkpointerwritedelay: usize,
@@ -956,7 +955,7 @@ impl PgWaitTypeTimeout {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PgStatDatabaseSum {
     pub xact_commit_ps: f64,
     pub xact_rollback_ps: f64,
@@ -1158,7 +1157,7 @@ impl PgStatDatabaseSum {
 }
 
 // this pg_stat_database is consistent with postgres version 15
-#[derive(Debug, FromRow, Clone)]
+#[derive(Debug, FromRow, Clone, Serialize, Deserialize)]
 pub struct PgStatDatabase {
     pub timestamp: DateTime<Local>,
     pub datid: Option<Oid>,
@@ -1240,7 +1239,7 @@ impl PgStatDatabase {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct PgStatWalSum {
     pub wal_records_ps: f64,
     pub wal_fpi_ps: f64,
@@ -1366,12 +1365,12 @@ impl PgStatWalSum {
     }
 }
 // this pg_stat_wal is consistent with postgres version 15
-#[derive(Debug, FromRow, Clone)]
+#[derive(Debug, FromRow, Clone, Serialize, Deserialize)]
 pub struct PgStatWal {
     pub timestamp: DateTime<Local>,
     pub wal_records: i64,
     pub wal_fpi: i64,
-    pub wal_bytes: BigDecimal,
+    pub wal_bytes: f64,
     pub wal_buffers_full: i64,
     pub wal_write: i64,
     pub wal_sync: i64,
@@ -1391,7 +1390,7 @@ impl PgStatWal {
             select clock_timestamp() as timestamp,
                    wal_records, 
                    wal_fpi, 
-                   wal_bytes,
+                   wal_bytes::double precision,
                    wal_buffers_full,
                    wal_write,
                    wal_sync, 
@@ -1410,7 +1409,7 @@ impl PgStatWal {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct PgStatBgWriterSum {
     pub checkpoint_write_time_ps: f64,
     pub checkpoint_sync_time_ps: f64,
@@ -1524,7 +1523,7 @@ impl PgStatBgWriterSum {
 }
 
 // this pg_stat_bgwriter is consistent with postgres version 15
-#[derive(Debug, FromRow, Clone)]
+#[derive(Debug, FromRow, Clone, Serialize, Deserialize)]
 pub struct PgStatBgWriter {
     pub timestamp: DateTime<Local>,
     pub checkpoints_timed: i64,
@@ -1572,7 +1571,7 @@ impl PgStatBgWriter {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct PgDatabaseXidLimits {
     pub age_datfronzenxid: f64,
     pub age_datminmxid: f64,
@@ -1632,7 +1631,7 @@ impl PgDatabase {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct StatisticsDelta {
     pub last_timestamp: DateTime<Local>,
     pub last_value: f64,
@@ -1736,5 +1735,6 @@ pub async fn processor_main() -> Result<()> {
         //);
         //println!("{:#?}", DELTATABLE.read().await);
         //println!("{:?}", DATA.wait_event_activity.read().await);
+        //println!("{:#?}", DATA.pg_stat_activity.read().await.iter().last());
     }
 }

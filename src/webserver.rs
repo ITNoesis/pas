@@ -23,7 +23,7 @@ use crate::{
 
 use crate::{ARGS, DATA};
 
-pub async fn webserver() -> Result<()> {
+pub async fn webserver_main() -> Result<()> {
     let app = Router::new()
         .route("/handler/:plot_1", get(handler_html))
         .route("/plotter/:plot_1", get(handler_plotter))
