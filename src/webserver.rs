@@ -1,6 +1,7 @@
 use anyhow::Result;
 use axum::{extract::Path, response::Html, response::IntoResponse, routing::get, Router};
 use futures::executor;
+use human_bytes::human_bytes;
 use image::{DynamicImage, ImageFormat};
 use plotters::style::full_palette::{
     BLUE_600, BROWN, GREEN_800, GREY, LIGHTBLUE_300, PINK_A100, PURPLE, RED_900,
@@ -81,6 +82,7 @@ pub async fn root_handler() -> Html<String> {
      <li><a href="/handler/sh_lwlock" target="right">ASH-lwlock</a></li>
      <li><a href="/handler/sh_timeout" target="right">ASH-timeout</a></li>
      <li><a href="/handler/wal_io_times" target="right">WAL latency</a></li>
+     <li><a href="/handler/wal_size" target="right">WAL size</a></li>
     </nav>
    </div>
    <div class = "column_right">
@@ -117,6 +119,7 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
         "sh_lwlock" => create_wait_event_type_and_lwlock_plot(&mut buffer),
         "sh_timeout" => create_wait_event_type_and_timeout_plot(&mut buffer),
         "wal_io_times" => create_wait_event_type_and_wal_io_plot(&mut buffer),
+        "wal_size" => create_wait_event_type_and_wal_size_plot(&mut buffer),
         &_ => todo!(),
     }
     let rgb_image = DynamicImage::ImageRgb8(
@@ -139,6 +142,13 @@ pub fn create_wait_event_type_and_wal_io_plot(buffer: &mut [u8]) {
     let mut multi_backend = backend.split_evenly((2, 1));
     wait_event_type_plot(&mut multi_backend, 0);
     wal_io_times(&mut multi_backend, 1);
+}
+pub fn create_wait_event_type_and_wal_size_plot(buffer: &mut [u8]) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((2, 1));
+    wait_event_type_plot(&mut multi_backend, 0);
+    wal_size(&mut multi_backend, 1);
 }
 pub fn create_wait_event_type_and_activity_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
@@ -2894,7 +2904,7 @@ pub fn wal_io_times(
         .x_labels(6)
         .x_label_formatter(&|timestamp| timestamp.format("%Y-%m-%dT%H:%M:%S").to_string())
         .x_desc("Time")
-        .y_desc("Active sessions")
+        .y_desc("Milliseconds")
         .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
         .draw()
         .unwrap();
@@ -2959,8 +2969,8 @@ pub fn wal_io_times(
         ))
         .unwrap()
         .label(format!(
-            "{:25} {:10.6} {:10.6} {:10.6}",
-            "Wal write latency",
+            "{:25} {:10.3} {:10.3} {:10.3} ms",
+            "Wal write",
             min_write,
             max_write,
             events.back().map_or(0_f64, |(_, r)| {
@@ -3011,8 +3021,8 @@ pub fn wal_io_times(
         ))
         .unwrap()
         .label(format!(
-            "{:25} {:10.6} {:10.6} {:10.6}",
-            "Wal sync latency",
+            "{:25} {:10.3} {:10.3} {:10.3} ms",
+            "Wal sync",
             min_sync,
             max_sync,
             events.back().map_or(0_f64, |(_, r)| {
@@ -3024,6 +3034,94 @@ pub fn wal_io_times(
             },)
         ))
         .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE.filled()));
+
+    contextarea
+        .configure_series_labels()
+        .border_style(BLACK)
+        .background_style(WHITE.mix(0.7))
+        .label_font((LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE))
+        .position(UpperLeft)
+        .draw()
+        .unwrap();
+}
+pub fn wal_size(
+    multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
+    backend_number: usize,
+) {
+    let events = executor::block_on(DATA.pg_stat_wal_sum.read());
+    let start_time = events.iter().map(|(timestamp, _)| timestamp).min().unwrap();
+    let end_time = events.iter().map(|(timestamp, _)| timestamp).max().unwrap();
+    let low_value_f64 = 0_f64;
+    let high_value_bytes = events
+        .iter()
+        .map(|(_, w)| w.wal_bytes_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+
+    multi_backend[backend_number].fill(&WHITE).unwrap();
+    let mut contextarea = ChartBuilder::on(&multi_backend[backend_number])
+        .set_label_area_size(LabelAreaPosition::Left, LABEL_AREA_SIZE_LEFT)
+        .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
+        .set_label_area_size(LabelAreaPosition::Right, LABEL_AREA_SIZE_RIGHT)
+        .caption("Wal IO size", (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE))
+        .build_cartesian_2d(*start_time..*end_time, low_value_f64..high_value_bytes)
+        .unwrap();
+    contextarea
+        .configure_mesh()
+        .x_labels(6)
+        .x_label_formatter(&|timestamp| timestamp.format("%Y-%m-%dT%H:%M:%S").to_string())
+        .x_desc("Time")
+        .y_desc("Wal size")
+        .y_label_formatter(&|size| format!("{}", human_bytes(*size)))
+        .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
+        .draw()
+        .unwrap();
+
+    // This is a dummy plot for the sole intention to write a header in the legend.
+    contextarea
+        .draw_series(LineSeries::new(
+            events
+                .iter()
+                .take(1)
+                .map(|(timestamp, w)| (*timestamp, w.wal_records_ps)),
+            ShapeStyle {
+                color: TRANSPARENT,
+                filled: false,
+                stroke_width: 1,
+            },
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "", "min", "max", "last"
+        ));
+    //
+    let min_write = events
+        .iter()
+        .map(|(_, w)| w.wal_bytes_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_write = events
+        .iter()
+        .map(|(_, w)| w.wal_bytes_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(LineSeries::new(
+            events
+                .iter()
+                .map(|(timestamp, w)| (*timestamp, w.wal_bytes_ps)),
+            GREEN,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Wal size",
+            human_bytes(min_write),
+            human_bytes(max_write),
+            human_bytes(events.back().map_or(0_f64, |(_, r)| r.wal_bytes_ps))
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
 
     contextarea
         .configure_series_labels()
