@@ -83,6 +83,8 @@ pub async fn root_handler() -> Html<String> {
      <li><a href="/handler/sh_timeout" target="right">ASH-timeout</a></li>
      <li><a href="/handler/wal_io_times" target="right">WAL latency</a></li>
      <li><a href="/handler/wal_size" target="right">WAL size</a></li>
+     <li><a href="/handler/io_latency" target="right">IO latency</a></li>
+     <li><a href="/handler/io_bandwidth" target="right">IO bandwidth</a></li>
     </nav>
    </div>
    <div class = "column_right">
@@ -120,6 +122,8 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
         "sh_timeout" => create_wait_event_type_and_timeout_plot(&mut buffer),
         "wal_io_times" => create_wait_event_type_and_wal_io_plot(&mut buffer),
         "wal_size" => create_wait_event_type_and_wal_size_plot(&mut buffer),
+        "io_latency" => create_wait_event_type_and_io_latency_plot(&mut buffer),
+        "io_bandwidth" => create_wait_event_type_and_io_bandwidth_plot(&mut buffer),
         &_ => todo!(),
     }
     let rgb_image = DynamicImage::ImageRgb8(
@@ -135,6 +139,20 @@ pub fn create_wait_event_type_plot(buffer: &mut [u8]) {
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((1, 1));
     wait_event_type_plot(&mut multi_backend, 0);
+}
+pub fn create_wait_event_type_and_io_bandwidth_plot(buffer: &mut [u8]) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((2, 1));
+    wait_event_type_plot(&mut multi_backend, 0);
+    io_bandwidth(&mut multi_backend, 1);
+}
+pub fn create_wait_event_type_and_io_latency_plot(buffer: &mut [u8]) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((2, 1));
+    wait_event_type_plot(&mut multi_backend, 0);
+    io_times(&mut multi_backend, 1);
 }
 pub fn create_wait_event_type_and_wal_io_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
@@ -3056,7 +3074,8 @@ pub fn wal_size(
         .iter()
         .map(|(_, w)| w.wal_bytes_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or_default();
+        .unwrap_or_default()
+        * 1.1_f64;
 
     multi_backend[backend_number].fill(&WHITE).unwrap();
     let mut contextarea = ChartBuilder::on(&multi_backend[backend_number])
@@ -3072,7 +3091,7 @@ pub fn wal_size(
         .x_label_formatter(&|timestamp| timestamp.format("%Y-%m-%dT%H:%M:%S").to_string())
         .x_desc("Time")
         .y_desc("Wal size")
-        .y_label_formatter(&|size| format!("{}", human_bytes(*size)))
+        .y_label_formatter(&|size| human_bytes(*size))
         .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
         .draw()
         .unwrap();
@@ -3122,6 +3141,611 @@ pub fn wal_size(
             human_bytes(events.back().map_or(0_f64, |(_, r)| r.wal_bytes_ps))
         ))
         .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
+
+    contextarea
+        .configure_series_labels()
+        .border_style(BLACK)
+        .background_style(WHITE.mix(0.7))
+        .label_font((LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE))
+        .position(UpperLeft)
+        .draw()
+        .unwrap();
+}
+pub fn io_times(
+    multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
+    backend_number: usize,
+) {
+    let wal_events = executor::block_on(DATA.pg_stat_wal_sum.read());
+    let database_events = executor::block_on(DATA.pg_stat_database_sum.read());
+    let bgwriter_events = executor::block_on(DATA.pg_stat_bgwriter_sum.read());
+    let wal_start_time = wal_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .min()
+        .unwrap();
+    let wal_end_time = wal_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .max()
+        .unwrap();
+    let database_start_time = database_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .min()
+        .unwrap();
+    let database_end_time = database_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .max()
+        .unwrap();
+    let bgwriter_start_time = bgwriter_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .min()
+        .unwrap();
+    let bgwriter_end_time = bgwriter_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .max()
+        .unwrap();
+    let start_time = wal_start_time
+        .min(database_start_time)
+        .min(bgwriter_start_time);
+    let end_time = wal_end_time.max(database_end_time).max(bgwriter_end_time);
+    let low_value_f64 = 0_f64;
+    let wal_high_value_write = wal_events
+        .iter()
+        .map(|(_, w)| {
+            if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
+                0_f64
+            } else {
+                w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps)
+            }
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    let wal_high_value_sync = wal_events
+        .iter()
+        .map(|(_, w)| {
+            if w.wal_sync_ps == 0_f64 {
+                0_f64
+            } else {
+                w.wal_sync_time_ps / w.wal_sync_ps
+            }
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    let database_high_value_read = database_events
+        .iter()
+        .map(|(_, d)| {
+            if d.blks_read_ps == 0_f64 {
+                0_f64
+            } else {
+                d.blk_read_time_ps / d.blks_read_ps
+            }
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    let database_high_value_write = database_events
+        .iter()
+        .zip(bgwriter_events.iter())
+        .map(|((_, d), (_, b))| {
+            if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps == 0_f64 {
+                0_f64
+            } else {
+                d.blk_write_time_ps
+                    / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
+            }
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    let high_value = wal_high_value_write
+        .max(wal_high_value_sync)
+        .max(database_high_value_read)
+        .max(database_high_value_write)
+        * 1.1_f64;
+
+    multi_backend[backend_number].fill(&WHITE).unwrap();
+    let mut contextarea = ChartBuilder::on(&multi_backend[backend_number])
+        .set_label_area_size(LabelAreaPosition::Left, LABEL_AREA_SIZE_LEFT)
+        .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
+        .set_label_area_size(LabelAreaPosition::Right, LABEL_AREA_SIZE_RIGHT)
+        .caption("IO latency", (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE))
+        .build_cartesian_2d(*start_time..*end_time, low_value_f64..high_value)
+        .unwrap();
+    contextarea
+        .configure_mesh()
+        .x_labels(6)
+        .x_label_formatter(&|timestamp| timestamp.format("%Y-%m-%dT%H:%M:%S").to_string())
+        .x_desc("Time")
+        .y_desc("Milliseconds")
+        .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
+        .draw()
+        .unwrap();
+
+    // This is a dummy plot for the sole intention to write a header in the legend.
+    contextarea
+        .draw_series(LineSeries::new(
+            wal_events
+                .iter()
+                .take(1)
+                .map(|(timestamp, w)| (*timestamp, w.wal_records_ps)),
+            ShapeStyle {
+                color: TRANSPARENT,
+                filled: false,
+                stroke_width: 1,
+            },
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "", "min", "max", "last"
+        ));
+    // wal write
+    let min_write = wal_events
+        .iter()
+        .map(|(_, w)| {
+            if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
+                0_f64
+            } else {
+                w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps)
+            }
+        })
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_write = wal_events
+        .iter()
+        .map(|(_, w)| {
+            if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
+                0_f64
+            } else {
+                w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps)
+            }
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(LineSeries::new(
+            wal_events.iter().map(|(timestamp, w)| {
+                (
+                    *timestamp,
+                    if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
+                        0_f64
+                    } else {
+                        w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps)
+                    },
+                )
+            }),
+            GREEN,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:10.3} {:10.3} {:10.3} ms",
+            "Wal write",
+            min_write,
+            max_write,
+            wal_events.back().map_or(0_f64, |(_, r)| {
+                if r.wal_buffers_full_ps + r.wal_write_ps == 0_f64 {
+                    0_f64
+                } else {
+                    r.wal_write_time_ps / (r.wal_buffers_full_ps + r.wal_write_ps)
+                }
+            },)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
+    // wal sync
+    let min_sync = wal_events
+        .iter()
+        .map(|(_, w)| {
+            if w.wal_sync_ps == 0_f64 {
+                0_f64
+            } else {
+                w.wal_sync_time_ps / w.wal_sync_ps
+            }
+        })
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_sync = wal_events
+        .iter()
+        .map(|(_, w)| {
+            if w.wal_sync_ps == 0_f64 {
+                0_f64
+            } else {
+                w.wal_sync_time_ps / w.wal_sync_ps
+            }
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(LineSeries::new(
+            wal_events.iter().map(|(timestamp, w)| {
+                (
+                    *timestamp,
+                    if w.wal_sync_ps == 0_f64 {
+                        0_f64
+                    } else {
+                        w.wal_sync_time_ps / w.wal_sync_ps
+                    },
+                )
+            }),
+            BLUE,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:10.3} {:10.3} {:10.3} ms",
+            "Wal sync",
+            min_sync,
+            max_sync,
+            wal_events.back().map_or(0_f64, |(_, r)| {
+                if r.wal_sync_ps == 0_f64 {
+                    0_f64
+                } else {
+                    r.wal_sync_time_ps / r.wal_sync_ps
+                }
+            },)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE.filled()));
+    // blocks read
+    let min_database_read = database_events
+        .iter()
+        .map(|(_, d)| {
+            if d.blks_read_ps == 0_f64 {
+                0_f64
+            } else {
+                d.blk_read_time_ps / d.blks_read_ps
+            }
+        })
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_database_read = database_events
+        .iter()
+        .map(|(_, d)| {
+            if d.blks_read_ps == 0_f64 {
+                0_f64
+            } else {
+                d.blk_read_time_ps / d.blks_read_ps
+            }
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(LineSeries::new(
+            database_events.iter().map(|(timestamp, d)| {
+                (
+                    *timestamp,
+                    if d.blks_read_ps == 0_f64 {
+                        0_f64
+                    } else {
+                        d.blk_read_time_ps / d.blks_read_ps
+                    },
+                )
+            }),
+            BLACK,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:10.3} {:10.3} {:10.3} ms",
+            "Block read",
+            min_database_read,
+            max_database_read,
+            database_events.back().map_or(0_f64, |(_, d)| {
+                if d.blks_read_ps == 0_f64 {
+                    0_f64
+                } else {
+                    d.blk_read_time_ps / d.blks_read_ps
+                }
+            },)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLACK.filled()));
+    // blocks write
+    let min_database_write = database_events
+        .iter()
+        .zip(bgwriter_events.iter())
+        .map(|((_, d), (_, b))| {
+            if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps == 0_f64 {
+                0_f64
+            } else {
+                d.blk_write_time_ps
+                    / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
+            }
+        })
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_database_write = database_events
+        .iter()
+        .zip(bgwriter_events.iter())
+        .map(|((_, d), (_, b))| {
+            if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps == 0_f64 {
+                0_f64
+            } else {
+                d.blk_write_time_ps
+                    / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
+            }
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(LineSeries::new(
+            database_events
+                .iter()
+                .zip(bgwriter_events.iter())
+                .map(|((timestamp, d), (_, b))| {
+                    (
+                        *timestamp,
+                        if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps
+                            == 0_f64
+                        {
+                            0_f64
+                        } else {
+                            d.blk_write_time_ps
+                                / (b.buffers_checkpoint_ps
+                                    + b.buffers_clean_ps
+                                    + b.buffers_backend_ps)
+                        },
+                    )
+                }),
+            RED,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:10.3} {:10.3} {:10.3} ms",
+            "Block write",
+            min_database_write,
+            max_database_write,
+            database_events
+                .iter()
+                .zip(bgwriter_events.iter())
+                .last()
+                .map_or(0_f64, |((_, d), (_, b))| {
+                    if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps == 0_f64
+                    {
+                        0_f64
+                    } else {
+                        d.blk_write_time_ps
+                            / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
+                    }
+                },)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()));
+
+    contextarea
+        .configure_series_labels()
+        .border_style(BLACK)
+        .background_style(WHITE.mix(0.7))
+        .label_font((LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE))
+        .position(UpperLeft)
+        .draw()
+        .unwrap();
+}
+pub fn io_bandwidth(
+    multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
+    backend_number: usize,
+) {
+    let database_events = executor::block_on(DATA.pg_stat_database_sum.read());
+    let bgwriter_events = executor::block_on(DATA.pg_stat_bgwriter_sum.read());
+    let database_start_time = database_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .min()
+        .unwrap();
+    let database_end_time = database_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .max()
+        .unwrap();
+    let bgwriter_start_time = bgwriter_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .min()
+        .unwrap();
+    let bgwriter_end_time = bgwriter_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .max()
+        .unwrap();
+    let start_time = database_start_time.min(bgwriter_start_time);
+    let end_time = database_end_time.max(bgwriter_end_time);
+    let low_value_f64 = 0_f64;
+    let high_value = database_events
+        .iter()
+        .zip(bgwriter_events.iter())
+        .map(|((_, d), (_, b))| {
+            (d.blks_read_ps + b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
+                * 8192_f64
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default()
+        * 1.1_f64;
+
+    multi_backend[backend_number].fill(&WHITE).unwrap();
+    let mut contextarea = ChartBuilder::on(&multi_backend[backend_number])
+        .set_label_area_size(LabelAreaPosition::Left, LABEL_AREA_SIZE_LEFT)
+        .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
+        .set_label_area_size(LabelAreaPosition::Right, LABEL_AREA_SIZE_RIGHT)
+        .caption(
+            "IO bandwidth (excluding WAL)",
+            (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE),
+        )
+        .build_cartesian_2d(*start_time..*end_time, low_value_f64..high_value)
+        .unwrap();
+    contextarea
+        .configure_mesh()
+        .x_labels(6)
+        .x_label_formatter(&|timestamp| timestamp.format("%Y-%m-%dT%H:%M:%S").to_string())
+        .x_desc("Time")
+        .y_desc("Bandwidth")
+        .y_label_formatter(&|size| human_bytes(*size))
+        .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
+        .draw()
+        .unwrap();
+
+    // This is a dummy plot for the sole intention to write a header in the legend.
+    contextarea
+        .draw_series(LineSeries::new(
+            database_events
+                .iter()
+                .take(1)
+                .map(|(timestamp, d)| (*timestamp, d.blks_read_ps)),
+            ShapeStyle {
+                color: TRANSPARENT,
+                filled: false,
+                stroke_width: 1,
+            },
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "", "min", "max", "last"
+        ));
+    // blocks read
+    let min_read = database_events
+        .iter()
+        .map(|(_, d)| d.blks_read_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_read = database_events
+        .iter()
+        .map(|(_, d)| d.blks_read_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(AreaSeries::new(
+            database_events
+                .iter()
+                .zip(bgwriter_events.iter())
+                .map(|((timestamp, d), (_, b))| {
+                    (
+                        *timestamp,
+                        (d.blks_read_ps
+                            + b.buffers_checkpoint_ps
+                            + b.buffers_clean_ps
+                            + b.buffers_backend_ps)
+                            * 8192_f64,
+                    )
+                }),
+            0.0,
+            GREEN,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Blocks read",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            database_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.blks_read_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
+    // blocks written checkpointer
+    let min_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_checkpoint_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_checkpoint_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(AreaSeries::new(
+            bgwriter_events.iter().map(|(timestamp, b)| {
+                (
+                    *timestamp,
+                    (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
+                        * 8192_f64,
+                )
+            }),
+            0.0,
+            BLUE,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Checkpointer write",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            bgwriter_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.buffers_checkpoint_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE.filled()));
+    // blocks written bgwriter
+    let min_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_clean_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_clean_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(AreaSeries::new(
+            bgwriter_events.iter().map(|(timestamp, b)| {
+                (
+                    *timestamp,
+                    (b.buffers_clean_ps + b.buffers_backend_ps) * 8192_f64,
+                )
+            }),
+            0.0,
+            PURPLE,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Bgwriter write",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            bgwriter_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.buffers_clean_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PURPLE.filled()));
+    // blocks written backend
+    let min_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_backend_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_backend_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(AreaSeries::new(
+            bgwriter_events
+                .iter()
+                .map(|(timestamp, b)| (*timestamp, b.buffers_backend_ps * 8192_f64)),
+            0.0,
+            RED,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Backend write",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            bgwriter_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.buffers_backend_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()));
 
     contextarea
         .configure_series_labels()
