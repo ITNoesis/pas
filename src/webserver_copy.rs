@@ -3,20 +3,18 @@ use axum::{extract::Path, response::Html, response::IntoResponse, routing::get, 
 use futures::executor;
 use human_bytes::human_bytes;
 use image::{DynamicImage, ImageFormat};
-use plotters::prelude::*;
-use plotters::style::Palette99;
-use plotters::style::{
-    full_palette::{BLUE_600, BROWN, GREEN_800, GREY, LIGHTBLUE_300, PINK_A100, PURPLE, RED_900},
-    text_anchor::{HPos, Pos, VPos},
+use plotters::style::full_palette::{
+    BLUE_600, BROWN, GREEN_800, GREY, LIGHTBLUE_300, PINK_A100, PURPLE, RED_900,
 };
-use std::collections::HashMap;
-use std::io::Cursor;
+use plotters::style::Palette99;
 use std::time::Duration;
+use std::{collections::HashMap, io::Cursor};
 use tokio::time::sleep;
 
 use plotters::backend::RGBPixel;
 use plotters::chart::SeriesLabelPosition::UpperLeft;
 use plotters::coord::Shift;
+use plotters::prelude::*;
 
 use crate::{
     CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE, LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE,
@@ -87,7 +85,6 @@ pub async fn root_handler() -> Html<String> {
      <li><a href="/handler/wal_size" target="right">WAL size</a></li>
      <li><a href="/handler/io_latency" target="right">IO latency</a></li>
      <li><a href="/handler/io_bandwidth" target="right">IO bandwidth</a></li>
-     <li><a href="/handler/queryid_time" target="right">QueryID time</a></li>
     </nav>
    </div>
    <div class = "column_right">
@@ -127,7 +124,6 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
         "wal_size" => create_wait_event_type_and_wal_size_plot(&mut buffer),
         "io_latency" => create_wait_event_type_and_io_latency_plot(&mut buffer),
         "io_bandwidth" => create_wait_event_type_and_io_bandwidth_plot(&mut buffer),
-        "queryid_time" => create_wait_event_type_and_queryid_time(&mut buffer),
         &_ => todo!(),
     }
     let rgb_image = DynamicImage::ImageRgb8(
@@ -143,13 +139,6 @@ pub fn create_wait_event_type_plot(buffer: &mut [u8]) {
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((1, 1));
     wait_event_type_plot(&mut multi_backend, 0);
-}
-pub fn create_wait_event_type_and_queryid_time(buffer: &mut [u8]) {
-    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
-        .into_drawing_area();
-    let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
-    ash_by_query_id(&mut multi_backend, 1);
 }
 pub fn create_wait_event_type_and_io_bandwidth_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
@@ -243,22 +232,49 @@ pub fn create_wait_event_type_and_timeout_plot(buffer: &mut [u8]) {
     wait_type_timeout(&mut multi_backend, 1);
 }
 
+#[derive(Debug, Default)]
+pub struct QueryIdAndWaitTypes {
+    pub on_cpu: usize,
+    pub activity: usize,
+    pub buffer_pin: usize,
+    pub client: usize,
+    pub extension: usize,
+    pub io: usize,
+    pub ipc: usize,
+    pub lock: usize,
+    pub lwlock: usize,
+    pub timeout: usize,
+}
+
 pub fn wait_event_type_plot(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
 ) {
-    let wait_event_type = executor::block_on(DATA.wait_event_types.read());
-    let start_time = wait_event_type
-        .iter()
-        .map(|(timestamp, _)| timestamp)
-        .min()
-        .unwrap();
-    let end_time = wait_event_type
-        .iter()
-        .map(|(timestamp, _)| timestamp)
-        .max()
-        .unwrap();
-    let low_value_f64 = 0_f64;
+    let mut samples_per_queryid: HashMap<i64, QueryIdAndWaitTypes> = HashMap::new();
+    let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    pg_stat_activity.iter().map(|(_, v)| {
+        v.iter()
+            .map(|a| (a.query_id.unwrap_or_default(), a.wait_event_type))
+            .for_each(|(q, w)| {
+                samples_per_queryid.entry(q).or_default();
+                match w {
+                    Activity => samples_per_queryid.entry(q).and_modify(|r| r.activity += 1),
+                    BufferPin => samples_per_queryid
+                        .entry(q)
+                        .and_modify(|r| r.buffer_pin += 1),
+                    Client => samples_per_queryid.entry(q).and_modify(|r| r.client += 1),
+                    Extension => samples_per_queryid
+                        .entry(q)
+                        .and_modify(|r| r.extension += 1),
+                    IO => samples_per_queryid.entry(q).and_modify(|r| r.io += 1),
+                    IPC => samples_per_queryid.entry(q).and_modify(|r| r.ipc += 1),
+                    Lock => samples_per_queryid.entry(q).and_modify(|r| r.lock += 1),
+                    LWLock => samples_per_queryid.entry(q).and_modify(|r| r.lwlock += 1),
+                    Timeout => samples_per_queryid.entry(q).and_modify(|r| r.timeout += 1),
+                };
+            });
+    });
+
     let high_value = wait_event_type
         .iter()
         .map(|(_, w)| {
@@ -3767,408 +3783,242 @@ pub fn io_bandwidth(
         .draw()
         .unwrap();
 }
-
-#[derive(Debug, Default)]
-pub struct QueryIdAndWaitTypes {
-    pub query: String,
-    pub total: usize,
-    pub on_cpu: usize,
-    pub activity: usize,
-    pub buffer_pin: usize,
-    pub client: usize,
-    pub extension: usize,
-    pub io: usize,
-    pub ipc: usize,
-    pub lock: usize,
-    pub lwlock: usize,
-    pub timeout: usize,
-}
-
-pub fn ash_by_query_id(
+pub fn ash_by_queryid(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
 ) {
-    let mut samples_per_queryid: HashMap<i64, QueryIdAndWaitTypes> = HashMap::new();
-    let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
-    for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
-        for r in per_sample_vector.iter() {
-            if r.state.as_ref().unwrap_or(&"".to_string()) == "active" {
-                samples_per_queryid
-                    .entry(r.query_id.unwrap_or_default())
-                    .or_insert(QueryIdAndWaitTypes {
-                        query: r.query.as_ref().unwrap_or(&"".to_string()).clone(),
-                        ..Default::default()
-                    });
-                match r.wait_event_type.as_deref().unwrap_or_default() {
-                    "activity" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.activity += 1),
-                    "bufferpin" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.buffer_pin += 1),
-                    "client" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.client += 1),
-                    "extension" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.extension += 1),
-                    "io" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.io += 1),
-                    "ipc" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.ipc += 1),
-                    "lock" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.lock += 1),
-                    "lwlock" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.lwlock += 1),
-                    "timeout" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.timeout += 1),
-                    &_ => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.on_cpu += 1),
-                };
-                samples_per_queryid
-                    .entry(r.query_id.unwrap_or_default())
-                    .and_modify(|r| r.total += 1);
-            }
-        }
-    }
-    #[derive(Debug)]
-    struct QueryCollection {
-        query_id: i64,
-        query: String,
-        total: usize,
-        on_cpu: usize,
-        activity: usize,
-        buffer_pin: usize,
-        client: usize,
-        extension: usize,
-        io: usize,
-        ipc: usize,
-        lock: usize,
-        lwlock: usize,
-        timeout: usize,
-    }
+    let database_events = executor::block_on(DATA.pg_stat_database_sum.read());
+    let bgwriter_events = executor::block_on(DATA.pg_stat_bgwriter_sum.read());
+    let database_start_time = database_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .min()
+        .unwrap();
+    let database_end_time = database_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .max()
+        .unwrap();
+    let bgwriter_start_time = bgwriter_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .min()
+        .unwrap();
+    let bgwriter_end_time = bgwriter_events
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .max()
+        .unwrap();
+    let start_time = database_start_time.min(bgwriter_start_time);
+    let end_time = database_end_time.max(bgwriter_end_time);
+    let low_value_f64 = 0_f64;
+    let high_value = database_events
+        .iter()
+        .zip(bgwriter_events.iter())
+        .map(|((_, d), (_, b))| {
+            (d.blks_read_ps + b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
+                * 8192_f64
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default()
+        * 1.1_f64;
 
-    let mut qc: Vec<QueryCollection> = Vec::new();
-    for (q, d) in samples_per_queryid {
-        qc.push(QueryCollection {
-            query_id: q,
-            query: d.query,
-            total: d.total,
-            on_cpu: d.on_cpu,
-            activity: d.activity,
-            buffer_pin: d.buffer_pin,
-            client: d.client,
-            extension: d.extension,
-            io: d.io,
-            ipc: d.ipc,
-            lock: d.lock,
-            lwlock: d.lwlock,
-            timeout: d.timeout,
-        });
-    }
-    qc.sort_by(|a, b| b.total.cmp(&a.total));
-
-    //println!("{:#?}", qc);
-    let total_number_queryids = qc.len() - 1;
-    let max_total_queryids = (qc.iter().map(|d| d.total).max().unwrap_or_default() * 110) / 100;
-    //println!("{:#?}", samples_per_queryid)
     multi_backend[backend_number].fill(&WHITE).unwrap();
     let mut contextarea = ChartBuilder::on(&multi_backend[backend_number])
         .set_label_area_size(LabelAreaPosition::Left, LABEL_AREA_SIZE_LEFT)
         .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
         .set_label_area_size(LabelAreaPosition::Right, LABEL_AREA_SIZE_RIGHT)
         .caption(
-            "Query id by number of samples",
+            "IO bandwidth (excluding WAL)",
             (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE),
         )
-        .build_cartesian_2d(
-            (0..total_number_queryids).into_segmented(),
-            0..max_total_queryids,
-        )
+        .build_cartesian_2d(*start_time..*end_time, low_value_f64..high_value)
         .unwrap();
     contextarea
         .configure_mesh()
+        .x_labels(6)
+        .x_label_formatter(&|timestamp| timestamp.format("%Y-%m-%dT%H:%M:%S").to_string())
+        .x_desc("Time")
+        .y_desc("Bandwidth")
+        .y_label_formatter(&|size| human_bytes(*size))
         .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
-        .x_label_formatter(&|v| {
-            qc.iter()
-                .map(|r| r.query_id)
-                .nth({
-                    if let SegmentValue::CenterOf(val) = v {
-                        *val
-                    } else {
-                        0
-                    }
-                })
-                .unwrap_or(0)
-                .to_string()
-        })
-        .x_label_style(
-            TextStyle::from((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE).into_font())
-                .pos(Pos::new(HPos::Left, VPos::Top))
-                .transform(FontTransform::Rotate90),
-        )
-        .y_desc("Samples")
-        .y_label_formatter(&|n| n.to_string())
         .draw()
         .unwrap();
 
+    // This is a dummy plot for the sole intention to write a header in the legend.
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (SegmentValue::Exact(x), 0),
-                    (SegmentValue::Exact(x + 1), y.on_cpu),
-                ],
-                GREEN.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(LineSeries::new(
+            database_events
+                .iter()
+                .take(1)
+                .map(|(timestamp, d)| (*timestamp, d.blks_read_ps)),
+            ShapeStyle {
+                color: TRANSPARENT,
+                filled: false,
+                stroke_width: 1,
+            },
+        ))
         .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], GREEN.stroke_width(3)))
-        .label("On CPU");
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "", "min", "max", "last"
+        ));
+    // blocks read
+    let min_read = database_events
+        .iter()
+        .map(|(_, d)| d.blks_read_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_read = database_events
+        .iter()
+        .map(|(_, d)| d.blks_read_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (SegmentValue::Exact(x), y.on_cpu),
-                    (SegmentValue::Exact(x + 1), y.on_cpu + y.io),
-                ],
-                BLUE_600.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(AreaSeries::new(
+            database_events
+                .iter()
+                .zip(bgwriter_events.iter())
+                .map(|((timestamp, d), (_, b))| {
+                    (
+                        *timestamp,
+                        (d.blks_read_ps
+                            + b.buffers_checkpoint_ps
+                            + b.buffers_clean_ps
+                            + b.buffers_backend_ps)
+                            * 8192_f64,
+                    )
+                }),
+            0.0,
+            GREEN,
+        ))
         .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], BLUE_600.stroke_width(3)))
-        .label("IO");
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Blocks read",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            database_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.blks_read_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
+    // blocks written checkpointer
+    let min_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_checkpoint_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_checkpoint_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (SegmentValue::Exact(x), y.on_cpu + y.io),
-                    (SegmentValue::Exact(x + 1), y.on_cpu + y.io + y.lock),
-                ],
-                RED.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(AreaSeries::new(
+            bgwriter_events.iter().map(|(timestamp, b)| {
+                (
+                    *timestamp,
+                    (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
+                        * 8192_f64,
+                )
+            }),
+            0.0,
+            BLUE,
+        ))
         .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED.stroke_width(3)))
-        .label("Lock");
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Checkpointer write",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            bgwriter_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.buffers_checkpoint_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE.filled()));
+    // blocks written bgwriter
+    let min_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_clean_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_clean_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (SegmentValue::Exact(x), y.on_cpu + y.io + y.lock),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu + y.io + y.lock + y.lwlock,
-                    ),
-                ],
-                RED_900.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(AreaSeries::new(
+            bgwriter_events.iter().map(|(timestamp, b)| {
+                (
+                    *timestamp,
+                    (b.buffers_clean_ps + b.buffers_backend_ps) * 8192_f64,
+                )
+            }),
+            0.0,
+            PURPLE,
+        ))
         .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED_900.stroke_width(3)))
-        .label("LWLock");
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Bgwriter write",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            bgwriter_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.buffers_clean_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PURPLE.filled()));
+    // blocks written backend
+    let min_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_backend_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_read = bgwriter_events
+        .iter()
+        .map(|(_, d)| d.buffers_backend_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (SegmentValue::Exact(x), y.on_cpu + y.io + y.lock + y.lwlock),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc,
-                    ),
-                ],
-                PINK_A100.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(AreaSeries::new(
+            bgwriter_events
+                .iter()
+                .map(|(timestamp, b)| (*timestamp, b.buffers_backend_ps * 8192_f64)),
+            0.0,
+            RED,
+        ))
         .unwrap()
-        .legend(move |(x, y)| {
-            PathElement::new(vec![(x, y), (x + 20, y)], PINK_A100.stroke_width(3))
-        })
-        .label("IPC");
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Backend write",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            bgwriter_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.buffers_backend_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()));
+
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        SegmentValue::Exact(x),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc,
-                    ),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc + y.timeout,
-                    ),
-                ],
-                BROWN.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], BROWN.stroke_width(3)))
-        .label("Timeout");
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        SegmentValue::Exact(x),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc + y.timeout,
-                    ),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc + y.timeout + y.extension,
-                    ),
-                ],
-                GREEN_800.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| {
-            PathElement::new(vec![(x, y), (x + 20, y)], GREEN_800.stroke_width(3))
-        })
-        .label("Extension");
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        SegmentValue::Exact(x),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc + y.timeout + y.extension,
-                    ),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu
-                            + y.io
-                            + y.lock
-                            + y.lwlock
-                            + y.ipc
-                            + y.timeout
-                            + y.extension
-                            + y.client,
-                    ),
-                ],
-                GREY.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], GREY.stroke_width(3)))
-        .label("Client");
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        SegmentValue::Exact(x),
-                        y.on_cpu
-                            + y.io
-                            + y.lock
-                            + y.lwlock
-                            + y.ipc
-                            + y.timeout
-                            + y.extension
-                            + y.client,
-                    ),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu
-                            + y.io
-                            + y.lock
-                            + y.lwlock
-                            + y.ipc
-                            + y.timeout
-                            + y.extension
-                            + y.client
-                            + y.buffer_pin,
-                    ),
-                ],
-                LIGHTBLUE_300.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| {
-            PathElement::new(vec![(x, y), (x + 20, y)], LIGHTBLUE_300.stroke_width(3))
-        })
-        .label("Buffer Pin");
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        SegmentValue::Exact(x),
-                        y.on_cpu
-                            + y.io
-                            + y.lock
-                            + y.lwlock
-                            + y.ipc
-                            + y.timeout
-                            + y.extension
-                            + y.client
-                            + y.buffer_pin,
-                    ),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu
-                            + y.io
-                            + y.lock
-                            + y.lwlock
-                            + y.ipc
-                            + y.timeout
-                            + y.extension
-                            + y.client
-                            + y.buffer_pin
-                            + y.activity,
-                    ),
-                ],
-                PURPLE.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PURPLE.stroke_width(3)))
-        .label("Activity");
-    //println!("{}", n);
-    //}
-    /*
-        // This is a dummy plot for the sole intention to write a header in the legend.
-        contextarea
-            .draw_series(LineSeries::new(
-                database_events
-                    .iter()
-                    .take(1)
-                    .map(|(timestamp, d)| (*timestamp, d.blks_read_ps)),
-                ShapeStyle {
-                    color: TRANSPARENT,
-                    filled: false,
-                    stroke_width: 1,
-                },
-            ))
-            .unwrap()
-            .label(format!(
-                "{:25} {:>10} {:>10} {:>10}",
-                "", "min", "max", "last"
-            ));
-    */
+        .configure_series_labels()
+        .border_style(BLACK)
+        .background_style(WHITE.mix(0.7))
+        .label_font((LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE))
+        .position(UpperLeft)
+        .draw()
+        .unwrap();
 }
