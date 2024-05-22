@@ -92,7 +92,7 @@ pub struct Opts {
         short = 'c',
         long,
         value_name = "connection string",
-        default_value = "postgres://frits.hoogland@frits.hoogland?host=/tmp/"
+        default_value = "postgres://postgres?host=/tmp"
     )]
     pub connection_string: String,
 }
