@@ -4,18 +4,18 @@ use futures::executor;
 use human_bytes::human_bytes;
 use image::{DynamicImage, ImageFormat};
 use plotters::prelude::*;
-use plotters::style::Palette99;
-use plotters::style::{
-    full_palette::{BLUE_600, BROWN, GREEN_800, GREY, LIGHTBLUE_300, PINK_A100, PURPLE, RED_900},
-    text_anchor::{HPos, Pos, VPos},
+use plotters::style::full_palette::{
+    BLUE_200, BLUE_600, BROWN, GREEN_200, GREEN_800, GREY, LIGHTBLUE_300, ORANGE, ORANGE_200,
+    PINK_A100, PURPLE, PURPLE_200, RED_200, RED_900,
 };
+use plotters::style::Palette99;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::time::Duration;
 use tokio::time::sleep;
 
 use plotters::backend::RGBPixel;
-use plotters::chart::SeriesLabelPosition::UpperLeft;
+use plotters::chart::SeriesLabelPosition::{LowerRight, UpperLeft};
 use plotters::coord::Shift;
 
 use crate::{
@@ -87,7 +87,9 @@ pub async fn root_handler() -> Html<String> {
      <li><a href="/handler/wal_size" target="right">WAL size</a></li>
      <li><a href="/handler/io_latency" target="right">IO latency</a></li>
      <li><a href="/handler/io_bandwidth" target="right">IO bandwidth</a></li>
-     <li><a href="/handler/queryid_time" target="right">QueryID time</a></li>
+     <li><a href="/handler/sh_qid" target="right">ASH-QueryID time</a></li>
+     <li><a href="/handler/sh_qid_q" target="right">ASH-QueryID-Q</a></li>
+     <li><a href="/handler/xid_age" target="right">XID Age</a></li>
     </nav>
    </div>
    <div class = "column_right">
@@ -127,7 +129,9 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
         "wal_size" => create_wait_event_type_and_wal_size_plot(&mut buffer),
         "io_latency" => create_wait_event_type_and_io_latency_plot(&mut buffer),
         "io_bandwidth" => create_wait_event_type_and_io_bandwidth_plot(&mut buffer),
-        "queryid_time" => create_wait_event_type_and_queryid_time(&mut buffer),
+        "sh_qid" => create_wait_event_type_and_queryid_time(&mut buffer),
+        "sh_qid_q" => create_wait_event_type_and_queryid_and_query(&mut buffer),
+        "xid_age" => create_xid_age_plot(&mut buffer),
         &_ => todo!(),
     }
     let rgb_image = DynamicImage::ImageRgb8(
@@ -143,6 +147,20 @@ pub fn create_wait_event_type_plot(buffer: &mut [u8]) {
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((1, 1));
     wait_event_type_plot(&mut multi_backend, 0);
+}
+pub fn create_xid_age_plot(buffer: &mut [u8]) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((1, 1));
+    xid_age(&mut multi_backend, 0);
+}
+pub fn create_wait_event_type_and_queryid_and_query(buffer: &mut [u8]) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((3, 1));
+    wait_event_type_plot(&mut multi_backend, 0);
+    ash_by_query_id(&mut multi_backend, 1);
+    show_queries(&mut multi_backend, 2);
 }
 pub fn create_wait_event_type_and_queryid_time(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
@@ -3784,6 +3802,23 @@ pub struct QueryIdAndWaitTypes {
     pub timeout: usize,
 }
 
+#[derive(Debug)]
+struct QueryCollection {
+    query_id: i64,
+    query: String,
+    total: usize,
+    on_cpu: usize,
+    activity: usize,
+    buffer_pin: usize,
+    client: usize,
+    extension: usize,
+    io: usize,
+    ipc: usize,
+    lock: usize,
+    lwlock: usize,
+    timeout: usize,
+}
+
 pub fn ash_by_query_id(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
@@ -3837,21 +3872,445 @@ pub fn ash_by_query_id(
             }
         }
     }
-    #[derive(Debug)]
-    struct QueryCollection {
-        query_id: i64,
-        query: String,
-        total: usize,
-        on_cpu: usize,
-        activity: usize,
-        buffer_pin: usize,
-        client: usize,
-        extension: usize,
-        io: usize,
-        ipc: usize,
-        lock: usize,
-        lwlock: usize,
-        timeout: usize,
+
+    let mut qc: Vec<QueryCollection> = Vec::new();
+    for (q, d) in samples_per_queryid {
+        qc.push(QueryCollection {
+            query_id: q,
+            query: d.query,
+            total: d.total,
+            on_cpu: d.on_cpu,
+            activity: d.activity,
+            buffer_pin: d.buffer_pin,
+            client: d.client,
+            extension: d.extension,
+            io: d.io,
+            ipc: d.ipc,
+            lock: d.lock,
+            lwlock: d.lwlock,
+            timeout: d.timeout,
+        });
+    }
+    qc.sort_by(|b, a| b.total.cmp(&a.total));
+
+    let total_number_queryids = if qc.len() > 1 { qc.len() - 1 } else { qc.len() };
+    let max_total_queryids = (qc.iter().map(|d| d.total).max().unwrap_or_default() * 110) / 100;
+    let tot_total: usize = qc.iter().map(|d| d.total).sum();
+    multi_backend[backend_number].fill(&WHITE).unwrap();
+    let mut contextarea = ChartBuilder::on(&multi_backend[backend_number])
+        .set_label_area_size(LabelAreaPosition::Left, 200)
+        .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
+        .caption(
+            "Query id by number of samples",
+            (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE),
+        )
+        .build_cartesian_2d(
+            0..max_total_queryids,
+            (0..total_number_queryids).into_segmented(),
+        )
+        .unwrap();
+    contextarea
+        .configure_mesh()
+        .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
+        .y_label_formatter(&|v| {
+            format!(
+                "{}",
+                qc.iter()
+                    .map(|r| r.query_id)
+                    .nth({
+                        if let SegmentValue::CenterOf(val) = v {
+                            *val
+                        } else {
+                            0
+                        }
+                    })
+                    .unwrap_or(0)
+            )
+        })
+        .x_desc("Samples")
+        .x_label_formatter(&|n| n.to_string())
+        .draw()
+        .unwrap();
+
+    contextarea
+        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+            let mut bar = Rectangle::new(
+                [
+                    (0, SegmentValue::Exact(y)),
+                    (x.on_cpu, SegmentValue::Exact(y + 1)),
+                ],
+                GREEN.filled(),
+            );
+            bar.set_margin(5, 5, 0, 0);
+            bar
+        }))
+        .unwrap()
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()))
+        .label(format!(
+            "{:10} {:>8} {:>6.2}%",
+            "On CPU",
+            qc.iter().map(|d| d.on_cpu).sum::<usize>(),
+            if tot_total == 0 {
+                0_f64
+            } else {
+                qc.iter().map(|d| d.on_cpu).sum::<usize>() as f64 / tot_total as f64 * 100_f64
+            },
+        ));
+    contextarea
+        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+            let mut bar = Rectangle::new(
+                [
+                    (x.on_cpu, SegmentValue::Exact(y)),
+                    (x.on_cpu + x.io, SegmentValue::Exact(y + 1)),
+                ],
+                BLUE_600.filled(),
+            );
+            bar.set_margin(5, 5, 0, 0);
+            bar
+        }))
+        .unwrap()
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE_600.filled()))
+        .label(format!(
+            "{:10} {:>8} {:>6.2}%",
+            "IO",
+            qc.iter().map(|d| d.io).sum::<usize>(),
+            if tot_total == 0 {
+                0_f64
+            } else {
+                qc.iter().map(|d| d.io).sum::<usize>() as f64 / tot_total as f64 * 100_f64
+            },
+        ));
+    contextarea
+        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+            let mut bar = Rectangle::new(
+                [
+                    (x.on_cpu + x.io, SegmentValue::Exact(y)),
+                    (x.on_cpu + x.io + x.lock, SegmentValue::Exact(y + 1)),
+                ],
+                RED.filled(),
+            );
+            bar.set_margin(5, 5, 0, 0);
+            bar
+        }))
+        .unwrap()
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()))
+        .label(format!(
+            "{:10} {:>8} {:>6.2}%",
+            "Lock",
+            qc.iter().map(|d| d.lock).sum::<usize>(),
+            if tot_total == 0 {
+                0_f64
+            } else {
+                qc.iter().map(|d| d.lock).sum::<usize>() as f64 / tot_total as f64 * 100_f64
+            },
+        ));
+    contextarea
+        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+            let mut bar = Rectangle::new(
+                [
+                    (x.on_cpu + x.io + x.lock, SegmentValue::Exact(y)),
+                    (
+                        x.on_cpu + x.io + x.lock + x.lwlock,
+                        SegmentValue::Exact(y + 1),
+                    ),
+                ],
+                RED_900.filled(),
+            );
+            bar.set_margin(5, 5, 0, 0);
+            bar
+        }))
+        .unwrap()
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED_900.filled()))
+        .label(format!(
+            "{:10} {:>8} {:>6.2}%",
+            "LWLock",
+            qc.iter().map(|d| d.lwlock).sum::<usize>(),
+            if tot_total == 0 {
+                0_f64
+            } else {
+                qc.iter().map(|d| d.lwlock).sum::<usize>() as f64 / tot_total as f64 * 100_f64
+            },
+        ));
+    contextarea
+        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+            let mut bar = Rectangle::new(
+                [
+                    (x.on_cpu + x.io + x.lock + x.lwlock, SegmentValue::Exact(y)),
+                    (
+                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc,
+                        SegmentValue::Exact(y + 1),
+                    ),
+                ],
+                PINK_A100.filled(),
+            );
+            bar.set_margin(5, 5, 0, 0);
+            bar
+        }))
+        .unwrap()
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PINK_A100.filled()))
+        .label(format!(
+            "{:10} {:>8} {:>6.2}%",
+            "IPC",
+            qc.iter().map(|d| d.ipc).sum::<usize>(),
+            if tot_total == 0 {
+                0_f64
+            } else {
+                qc.iter().map(|d| d.ipc).sum::<usize>() as f64 / tot_total as f64 * 100_f64
+            },
+        ));
+    contextarea
+        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+            let mut bar = Rectangle::new(
+                [
+                    (
+                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc,
+                        SegmentValue::Exact(y),
+                    ),
+                    (
+                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc + x.timeout,
+                        SegmentValue::Exact(y + 1),
+                    ),
+                ],
+                BROWN.filled(),
+            );
+            bar.set_margin(5, 5, 0, 0);
+            bar
+        }))
+        .unwrap()
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BROWN.filled()))
+        .label(format!(
+            "{:10} {:>8} {:>6.2}%",
+            "Timeout",
+            qc.iter().map(|d| d.timeout).sum::<usize>(),
+            if tot_total == 0 {
+                0_f64
+            } else {
+                qc.iter().map(|d| d.timeout).sum::<usize>() as f64 / tot_total as f64 * 100_f64
+            },
+        ));
+    contextarea
+        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+            let mut bar = Rectangle::new(
+                [
+                    (
+                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc + x.timeout,
+                        SegmentValue::Exact(y),
+                    ),
+                    (
+                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc + x.timeout + x.extension,
+                        SegmentValue::Exact(y + 1),
+                    ),
+                ],
+                GREEN_800.filled(),
+            );
+            bar.set_margin(5, 5, 0, 0);
+            bar
+        }))
+        .unwrap()
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN_800.filled()))
+        .label(format!(
+            "{:10} {:>8} {:>6.2}%",
+            "Extension",
+            qc.iter().map(|d| d.extension).sum::<usize>(),
+            if tot_total == 0 {
+                0_f64
+            } else {
+                qc.iter().map(|d| d.extension).sum::<usize>() as f64 / tot_total as f64 * 100_f64
+            },
+        ));
+    contextarea
+        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+            let mut bar = Rectangle::new(
+                [
+                    (
+                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc + x.timeout + x.extension,
+                        SegmentValue::Exact(y),
+                    ),
+                    (
+                        x.on_cpu
+                            + x.io
+                            + x.lock
+                            + x.lwlock
+                            + x.ipc
+                            + x.timeout
+                            + x.extension
+                            + x.client,
+                        SegmentValue::Exact(y + 1),
+                    ),
+                ],
+                GREY.filled(),
+            );
+            bar.set_margin(5, 5, 0, 0);
+            bar
+        }))
+        .unwrap()
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREY.filled()))
+        .label(format!(
+            "{:10} {:>8} {:>6.2}%",
+            "Client",
+            qc.iter().map(|d| d.client).sum::<usize>(),
+            if tot_total == 0 {
+                0_f64
+            } else {
+                qc.iter().map(|d| d.client).sum::<usize>() as f64 / tot_total as f64 * 100_f64
+            },
+        ));
+    contextarea
+        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+            let mut bar = Rectangle::new(
+                [
+                    (
+                        x.on_cpu
+                            + x.io
+                            + x.lock
+                            + x.lwlock
+                            + x.ipc
+                            + x.timeout
+                            + x.extension
+                            + x.client,
+                        SegmentValue::Exact(y),
+                    ),
+                    (
+                        x.on_cpu
+                            + x.io
+                            + x.lock
+                            + x.lwlock
+                            + x.ipc
+                            + x.timeout
+                            + x.extension
+                            + x.client
+                            + x.buffer_pin,
+                        SegmentValue::Exact(y + 1),
+                    ),
+                ],
+                LIGHTBLUE_300.filled(),
+            );
+            bar.set_margin(5, 5, 0, 0);
+            bar
+        }))
+        .unwrap()
+        .legend(move |(x, y)| {
+            Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], LIGHTBLUE_300.filled())
+        })
+        .label(format!(
+            "{:10} {:>8} {:>6.2}%",
+            "Buffer Pin",
+            qc.iter().map(|d| d.buffer_pin).sum::<usize>(),
+            if tot_total == 0 {
+                0_f64
+            } else {
+                qc.iter().map(|d| d.buffer_pin).sum::<usize>() as f64 / tot_total as f64 * 100_f64
+            },
+        ));
+    contextarea
+        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+            let mut bar = Rectangle::new(
+                [
+                    (
+                        x.on_cpu
+                            + x.io
+                            + x.lock
+                            + x.lwlock
+                            + x.ipc
+                            + x.timeout
+                            + x.extension
+                            + x.client
+                            + x.buffer_pin,
+                        SegmentValue::Exact(y),
+                    ),
+                    (
+                        x.on_cpu
+                            + x.io
+                            + x.lock
+                            + x.lwlock
+                            + x.ipc
+                            + x.timeout
+                            + x.extension
+                            + x.client
+                            + x.buffer_pin
+                            + x.activity,
+                        SegmentValue::Exact(y + 1),
+                    ),
+                ],
+                PURPLE.filled(),
+            );
+            bar.set_margin(5, 5, 0, 0);
+            bar
+        }))
+        .unwrap()
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PURPLE.filled()))
+        .label(format!(
+            "{:10} {:>8} {:>6.2}%",
+            "Activity",
+            qc.iter().map(|d| d.activity).sum::<usize>(),
+            if tot_total == 0 {
+                0_f64
+            } else {
+                qc.iter().map(|d| d.activity).sum::<usize>() as f64 / tot_total as f64 * 100_f64
+            },
+        ));
+
+    contextarea
+        .configure_series_labels()
+        .border_style(BLACK)
+        .background_style(WHITE.mix(0.7))
+        .label_font((LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE))
+        .position(LowerRight)
+        .draw()
+        .unwrap();
+}
+pub fn show_queries(
+    multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
+    backend_number: usize,
+) {
+    let mut samples_per_queryid: HashMap<i64, QueryIdAndWaitTypes> = HashMap::new();
+    let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
+        for r in per_sample_vector.iter() {
+            if r.state.as_ref().unwrap_or(&"".to_string()) == "active" {
+                samples_per_queryid
+                    .entry(r.query_id.unwrap_or_default())
+                    .or_insert(QueryIdAndWaitTypes {
+                        query: r.query.as_ref().unwrap_or(&"".to_string()).clone(),
+                        ..Default::default()
+                    });
+                match r.wait_event_type.as_deref().unwrap_or_default() {
+                    "activity" => samples_per_queryid
+                        .entry(r.query_id.unwrap_or_default())
+                        .and_modify(|r| r.activity += 1),
+                    "bufferpin" => samples_per_queryid
+                        .entry(r.query_id.unwrap_or_default())
+                        .and_modify(|r| r.buffer_pin += 1),
+                    "client" => samples_per_queryid
+                        .entry(r.query_id.unwrap_or_default())
+                        .and_modify(|r| r.client += 1),
+                    "extension" => samples_per_queryid
+                        .entry(r.query_id.unwrap_or_default())
+                        .and_modify(|r| r.extension += 1),
+                    "io" => samples_per_queryid
+                        .entry(r.query_id.unwrap_or_default())
+                        .and_modify(|r| r.io += 1),
+                    "ipc" => samples_per_queryid
+                        .entry(r.query_id.unwrap_or_default())
+                        .and_modify(|r| r.ipc += 1),
+                    "lock" => samples_per_queryid
+                        .entry(r.query_id.unwrap_or_default())
+                        .and_modify(|r| r.lock += 1),
+                    "lwlock" => samples_per_queryid
+                        .entry(r.query_id.unwrap_or_default())
+                        .and_modify(|r| r.lwlock += 1),
+                    "timeout" => samples_per_queryid
+                        .entry(r.query_id.unwrap_or_default())
+                        .and_modify(|r| r.timeout += 1),
+                    &_ => samples_per_queryid
+                        .entry(r.query_id.unwrap_or_default())
+                        .and_modify(|r| r.on_cpu += 1),
+                };
+                samples_per_queryid
+                    .entry(r.query_id.unwrap_or_default())
+                    .and_modify(|r| r.total += 1);
+            }
+        }
     }
 
     let mut qc: Vec<QueryCollection> = Vec::new();
@@ -3873,302 +4332,446 @@ pub fn ash_by_query_id(
         });
     }
     qc.sort_by(|a, b| b.total.cmp(&a.total));
+    let grand_total_samples: f64 = qc.iter().map(|r| r.total as f64).sum();
 
-    //println!("{:#?}", qc);
-    let total_number_queryids = qc.len() - 1;
-    let max_total_queryids = (qc.iter().map(|d| d.total).max().unwrap_or_default() * 110) / 100;
-    //println!("{:#?}", samples_per_queryid)
+    multi_backend[backend_number].fill(&WHITE).unwrap();
+
+    let mut y_counter = 0;
+    for query in qc.iter() {
+        multi_backend[backend_number]
+            .draw(&Text::new(
+                format!(
+                    "{:>20}  {:6.2}% {:8} {}",
+                    query.query_id,
+                    query.total as f64 / grand_total_samples * 100_f64,
+                    query.total,
+                    if query.query_id == 0 {
+                        "*".to_string()
+                    } else {
+                        query.query.to_string()
+                    }
+                ),
+                (10, y_counter),
+                (MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE).into_font(),
+            ))
+            .unwrap();
+        y_counter += 20;
+    }
+    multi_backend[backend_number]
+        .draw(&Text::new(
+            format!(
+                "{:>20}  {:6.2}% {:8} {}",
+                "total", 100_f64, grand_total_samples, ""
+            ),
+            (10, y_counter),
+            (MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE).into_font(),
+        ))
+        .unwrap();
+}
+
+pub fn xid_age(
+    multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
+    backend_number: usize,
+) {
+    let xid_age = executor::block_on(DATA.pg_database_xid_limits.read());
+    let start_time = xid_age
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .min()
+        .unwrap();
+    let end_time = xid_age
+        .iter()
+        .map(|(timestamp, _)| timestamp)
+        .max()
+        .unwrap();
+    let low_value_f64 = 0_f64;
+    let high_value = 2_i64.pow(31) as f64 * 1.1_f64;
+
     multi_backend[backend_number].fill(&WHITE).unwrap();
     let mut contextarea = ChartBuilder::on(&multi_backend[backend_number])
         .set_label_area_size(LabelAreaPosition::Left, LABEL_AREA_SIZE_LEFT)
         .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
         .set_label_area_size(LabelAreaPosition::Right, LABEL_AREA_SIZE_RIGHT)
         .caption(
-            "Query id by number of samples",
+            "Transaction ID age",
             (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE),
         )
-        .build_cartesian_2d(
-            (0..total_number_queryids).into_segmented(),
-            0..max_total_queryids,
-        )
+        .build_cartesian_2d(*start_time..*end_time, low_value_f64..high_value)
         .unwrap();
     contextarea
         .configure_mesh()
+        .x_labels(6)
+        .x_label_formatter(&|timestamp| timestamp.format("%Y-%m-%dT%H:%M:%S").to_string())
+        .x_desc("Time")
+        .y_desc("XID age")
+        .y_label_formatter(&|age| format!("{}", *age))
         .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
-        .x_label_formatter(&|v| {
-            qc.iter()
-                .map(|r| r.query_id)
-                .nth({
-                    if let SegmentValue::CenterOf(val) = v {
-                        *val
-                    } else {
-                        0
-                    }
-                })
-                .unwrap_or(0)
-                .to_string()
-        })
-        .x_label_style(
-            TextStyle::from((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE).into_font())
-                .pos(Pos::new(HPos::Left, VPos::Top))
-                .transform(FontTransform::Rotate90),
-        )
-        .y_desc("Samples")
-        .y_label_formatter(&|n| n.to_string())
         .draw()
         .unwrap();
 
+    // This is a dummy plot for the sole intention to write a header in the legend.
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (SegmentValue::Exact(x), 0),
-                    (SegmentValue::Exact(x + 1), y.on_cpu),
-                ],
-                GREEN.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .take(1)
+                .map(|(timestamp, d)| (*timestamp, d.age_datminmxid)),
+            ShapeStyle {
+                color: TRANSPARENT,
+                filled: false,
+                stroke_width: 1,
+            },
+        ))
         .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], GREEN.stroke_width(3)))
-        .label("On CPU");
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "", "min", "max", "last"
+        ));
+
+    let min_vmfma = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_multixact_freeze_min_age)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_vmfma = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_multixact_freeze_min_age)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (SegmentValue::Exact(x), y.on_cpu),
-                    (SegmentValue::Exact(x + 1), y.on_cpu + y.io),
-                ],
-                BLUE_600.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, d)| (*timestamp, d.vacuum_multixact_freeze_min_age)),
+            ORANGE_200,
+        ))
         .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], BLUE_600.stroke_width(3)))
-        .label("IO");
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (SegmentValue::Exact(x), y.on_cpu + y.io),
-                    (SegmentValue::Exact(x + 1), y.on_cpu + y.io + y.lock),
-                ],
-                RED.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED.stroke_width(3)))
-        .label("Lock");
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (SegmentValue::Exact(x), y.on_cpu + y.io + y.lock),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu + y.io + y.lock + y.lwlock,
-                    ),
-                ],
-                RED_900.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED_900.stroke_width(3)))
-        .label("LWLock");
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (SegmentValue::Exact(x), y.on_cpu + y.io + y.lock + y.lwlock),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc,
-                    ),
-                ],
-                PINK_A100.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
-        .unwrap()
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "vacuum_multixact_freeze_min_age",
+            min_vmfma,
+            max_vmfma,
+            xid_age
+                .iter()
+                .last()
+                .map_or(0_f64, |(_, b)| b.vacuum_multixact_freeze_min_age)
+        ))
         .legend(move |(x, y)| {
-            PathElement::new(vec![(x, y), (x + 20, y)], PINK_A100.stroke_width(3))
-        })
-        .label("IPC");
+            Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], ORANGE_200.filled())
+        });
+    let min_vmfta = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_multixact_freeze_table_age)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_vmfta = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_multixact_freeze_table_age)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        SegmentValue::Exact(x),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc,
-                    ),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc + y.timeout,
-                    ),
-                ],
-                BROWN.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, d)| (*timestamp, d.vacuum_multixact_freeze_table_age)),
+            GREEN_200,
+        ))
         .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], BROWN.stroke_width(3)))
-        .label("Timeout");
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "vacuum_multixact_freeze_table_age",
+            min_vmfta,
+            max_vmfta,
+            xid_age
+                .iter()
+                .last()
+                .map_or(0_f64, |(_, b)| b.vacuum_multixact_freeze_table_age)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN_200.filled()));
+    let min_amfma = xid_age
+        .iter()
+        .map(|(_, d)| d.autovacuum_multixact_freeze_max_age)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_amfma = xid_age
+        .iter()
+        .map(|(_, d)| d.autovacuum_multixact_freeze_max_age)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        SegmentValue::Exact(x),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc + y.timeout,
-                    ),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc + y.timeout + y.extension,
-                    ),
-                ],
-                GREEN_800.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, d)| (*timestamp, d.autovacuum_multixact_freeze_max_age)),
+            BLUE_200,
+        ))
         .unwrap()
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "autovacuum_multixact_freeze_max_age",
+            min_amfma,
+            max_amfma,
+            xid_age
+                .iter()
+                .last()
+                .map_or(0_f64, |(_, b)| b.autovacuum_multixact_freeze_max_age)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE_200.filled()));
+    let min_vmfa = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_multixact_failsafe_age)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_vmfa = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_multixact_failsafe_age)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, d)| (*timestamp, d.vacuum_multixact_failsafe_age)),
+            PURPLE_200,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "vacuum_multixact_failsafe_age",
+            min_vmfa,
+            max_vmfa,
+            xid_age
+                .iter()
+                .last()
+                .map_or(0_f64, |(_, b)| b.vacuum_multixact_failsafe_age)
+        ))
         .legend(move |(x, y)| {
-            PathElement::new(vec![(x, y), (x + 20, y)], GREEN_800.stroke_width(3))
-        })
-        .label("Extension");
+            Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PURPLE_200.filled())
+        });
+    let min_mxid_xid = xid_age
+        .iter()
+        .map(|(_, d)| d.age_datminmxid)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_mxid_xid = xid_age
+        .iter()
+        .map(|(_, d)| d.age_datminmxid)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        SegmentValue::Exact(x),
-                        y.on_cpu + y.io + y.lock + y.lwlock + y.ipc + y.timeout + y.extension,
-                    ),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu
-                            + y.io
-                            + y.lock
-                            + y.lwlock
-                            + y.ipc
-                            + y.timeout
-                            + y.extension
-                            + y.client,
-                    ),
-                ],
-                GREY.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, d)| (*timestamp, d.age_datminmxid)),
+            ShapeStyle {
+                color: GREY.into(),
+                filled: true,
+                stroke_width: 3,
+            },
+        ))
         .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], GREY.stroke_width(3)))
-        .label("Client");
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "multixact XID",
+            min_mxid_xid,
+            max_mxid_xid,
+            xid_age
+                .iter()
+                .last()
+                .map_or(0_f64, |(_, b)| b.age_datminmxid)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREY.filled()));
+    let min_vfma = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_freeze_min_age)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_vfma = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_freeze_min_age)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        SegmentValue::Exact(x),
-                        y.on_cpu
-                            + y.io
-                            + y.lock
-                            + y.lwlock
-                            + y.ipc
-                            + y.timeout
-                            + y.extension
-                            + y.client,
-                    ),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu
-                            + y.io
-                            + y.lock
-                            + y.lwlock
-                            + y.ipc
-                            + y.timeout
-                            + y.extension
-                            + y.client
-                            + y.buffer_pin,
-                    ),
-                ],
-                LIGHTBLUE_300.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, d)| (*timestamp, d.vacuum_freeze_min_age)),
+            ORANGE,
+        ))
         .unwrap()
-        .legend(move |(x, y)| {
-            PathElement::new(vec![(x, y), (x + 20, y)], LIGHTBLUE_300.stroke_width(3))
-        })
-        .label("Buffer Pin");
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "vacuum_freeze_min_age",
+            min_vfma,
+            max_vfma,
+            xid_age
+                .iter()
+                .last()
+                .map_or(0_f64, |(_, b)| b.vacuum_freeze_min_age)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], ORANGE.filled()));
+    let min_vfta = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_freeze_table_age)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_vfta = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_freeze_table_age)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
     contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(x, y)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        SegmentValue::Exact(x),
-                        y.on_cpu
-                            + y.io
-                            + y.lock
-                            + y.lwlock
-                            + y.ipc
-                            + y.timeout
-                            + y.extension
-                            + y.client
-                            + y.buffer_pin,
-                    ),
-                    (
-                        SegmentValue::Exact(x + 1),
-                        y.on_cpu
-                            + y.io
-                            + y.lock
-                            + y.lwlock
-                            + y.ipc
-                            + y.timeout
-                            + y.extension
-                            + y.client
-                            + y.buffer_pin
-                            + y.activity,
-                    ),
-                ],
-                PURPLE.filled(),
-            );
-            bar.set_margin(0, 0, 5, 5);
-            bar
-        }))
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, d)| (*timestamp, d.vacuum_freeze_table_age)),
+            GREEN,
+        ))
         .unwrap()
-        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PURPLE.stroke_width(3)))
-        .label("Activity");
-    //println!("{}", n);
-    //}
-    /*
-        // This is a dummy plot for the sole intention to write a header in the legend.
-        contextarea
-            .draw_series(LineSeries::new(
-                database_events
-                    .iter()
-                    .take(1)
-                    .map(|(timestamp, d)| (*timestamp, d.blks_read_ps)),
-                ShapeStyle {
-                    color: TRANSPARENT,
-                    filled: false,
-                    stroke_width: 1,
-                },
-            ))
-            .unwrap()
-            .label(format!(
-                "{:25} {:>10} {:>10} {:>10}",
-                "", "min", "max", "last"
-            ));
-    */
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "vacuum_freeze_table_age",
+            min_vfta,
+            max_vfta,
+            xid_age
+                .iter()
+                .last()
+                .map_or(0_f64, |(_, b)| b.vacuum_freeze_table_age)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
+    let min_amfa = xid_age
+        .iter()
+        .map(|(_, d)| d.autovacuum_freeze_max_age)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_amfa = xid_age
+        .iter()
+        .map(|(_, d)| d.autovacuum_freeze_max_age)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, d)| (*timestamp, d.autovacuum_freeze_max_age)),
+            BLUE,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "autovacuum_freeze_max_age",
+            min_amfa,
+            max_amfa,
+            xid_age
+                .iter()
+                .last()
+                .map_or(0_f64, |(_, b)| b.autovacuum_freeze_max_age)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE.filled()));
+    let min_vfa = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_failsafe_age)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_vfa = xid_age
+        .iter()
+        .map(|(_, d)| d.vacuum_failsafe_age)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, d)| (*timestamp, d.vacuum_failsafe_age)),
+            PURPLE,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "vacuum_failsafe_age",
+            min_vfa,
+            max_vfa,
+            xid_age
+                .iter()
+                .last()
+                .map_or(0_f64, |(_, b)| b.vacuum_failsafe_age)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PURPLE.filled()));
+    let min_frozen_xid = xid_age
+        .iter()
+        .map(|(_, d)| d.age_datfrozenxid)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_frozen_xid = xid_age
+        .iter()
+        .map(|(_, d)| d.age_datfrozenxid)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, d)| (*timestamp, d.age_datfrozenxid)),
+            ShapeStyle {
+                color: BLACK.into(),
+                filled: true,
+                stroke_width: 3,
+            },
+        ))
+        .unwrap()
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "Frozen XID",
+            min_frozen_xid,
+            max_frozen_xid,
+            xid_age
+                .iter()
+                .last()
+                .map_or(0_f64, |(_, b)| b.age_datfrozenxid)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLACK.filled()));
+
+    // readonly point
+    contextarea
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, _)| (*timestamp, (2_i64.pow(31) - 3_000_000_i64) as f64)),
+            RED_200,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "readonly point",
+            "",
+            "",
+            2_i64.pow(31) - 3_000_000_i64
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED_200.filled()));
+    // the absolute limit
+    contextarea
+        .draw_series(LineSeries::new(
+            xid_age
+                .iter()
+                .map(|(timestamp, _)| (*timestamp, 2_i64.pow(31) as f64)),
+            RED,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:50} {:>10} {:>10} {:>10}",
+            "absolute limit",
+            "",
+            "",
+            2_i64.pow(31)
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()));
+
+    contextarea
+        .configure_series_labels()
+        .border_style(BLACK)
+        .background_style(WHITE.mix(0.7))
+        .label_font((LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE))
+        .position(UpperLeft)
+        .draw()
+        .unwrap();
 }

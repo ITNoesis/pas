@@ -73,7 +73,7 @@ pub struct Opts {
         short = 'W',
         long,
         value_name = "graph buffer width",
-        default_value = "1500"
+        default_value = "1400"
     )]
     pub graph_width: u32,
     /// graph buffer heighth
@@ -87,6 +87,14 @@ pub struct Opts {
     /// Read history file(s), don't do active fetching
     #[arg(short = 'r', long, value_name = "read archives")]
     pub read: Option<String>,
+    /// Read history file(s), don't do active fetching
+    #[arg(
+        short = 'c',
+        long,
+        value_name = "connection string",
+        default_value = "postgres://frits.hoogland@frits.hoogland?host=/tmp/"
+    )]
+    pub connection_string: String,
 }
 
 pub static ARGS: Lazy<Opts> = Lazy::new(Opts::parse);

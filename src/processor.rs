@@ -1573,10 +1573,112 @@ impl PgStatBgWriter {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct PgDatabaseXidLimits {
-    pub age_datfronzenxid: f64,
+    pub age_datfrozenxid: f64,
     pub age_datminmxid: f64,
+    pub vacuum_failsafe_age: f64,
+    pub autovacuum_freeze_max_age: f64,
+    pub vacuum_freeze_table_age: f64,
+    pub vacuum_freeze_min_age: f64,
+    pub vacuum_multixact_failsafe_age: f64,
+    pub autovacuum_multixact_freeze_max_age: f64,
+    pub vacuum_multixact_freeze_table_age: f64,
+    pub vacuum_multixact_freeze_min_age: f64,
 }
-impl PgDatabaseXidLimits {}
+impl PgDatabaseXidLimits {
+    pub async fn process_pg_database(pg_database: Vec<PgDatabase>) {
+        let pg_database_timestamp = pg_database.last().map(|r| r.timestamp).unwrap();
+
+        DeltaTable::add_or_update(
+            "pg_database.age_datfrozenxid",
+            pg_database_timestamp,
+            pg_database
+                .iter()
+                .map(|r| r.age_datfrozenxid)
+                .max()
+                .unwrap() as f64,
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_database.age_datminmxid",
+            pg_database_timestamp,
+            pg_database.iter().map(|r| r.age_datminmxid).max().unwrap() as f64,
+        )
+        .await;
+        if DELTATABLE
+            .read()
+            .await
+            .get("pg_database.age_datfrozenxid")
+            .unwrap()
+            .updated_value
+        {
+            DATA.pg_database_xid_limits.write().await.push_back((
+                pg_database_timestamp,
+                PgDatabaseXidLimits {
+                    age_datfrozenxid: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_database.age_datfrozenxid")
+                        .unwrap()
+                        .last_value,
+                    age_datminmxid: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_database.age_datminmxid")
+                        .unwrap()
+                        .last_value,
+                    vacuum_failsafe_age: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_settings.vacuum_failsafe_age")
+                        .unwrap()
+                        .last_value,
+                    autovacuum_freeze_max_age: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_settings.autovacuum_freeze_max_age")
+                        .unwrap()
+                        .last_value,
+                    vacuum_freeze_table_age: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_settings.vacuum_freeze_table_age")
+                        .unwrap()
+                        .last_value,
+                    vacuum_freeze_min_age: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_settings.vacuum_freeze_min_age")
+                        .unwrap()
+                        .last_value,
+                    vacuum_multixact_failsafe_age: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_settings.vacuum_multixact_failsafe_age")
+                        .unwrap()
+                        .last_value,
+                    autovacuum_multixact_freeze_max_age: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_settings.autovacuum_multixact_freeze_max_age")
+                        .unwrap()
+                        .last_value,
+                    vacuum_multixact_freeze_table_age: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_settings.vacuum_multixact_freeze_table_age")
+                        .unwrap()
+                        .last_value,
+                    vacuum_multixact_freeze_min_age: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_settings.vacuum_multixact_freeze_min_age")
+                        .unwrap()
+                        .last_value,
+                },
+            ));
+        }
+    }
+}
 
 // this pg_database is consistent with postgres version 15
 #[derive(Debug, FromRow, Clone)]
@@ -1600,7 +1702,11 @@ pub struct PgDatabase {
 }
 
 impl PgDatabase {
-    pub async fn query(pool: &Pool<sqlx::Postgres>) -> Vec<PgDatabase> {
+    pub async fn fetch_and_add_to_data(pool: &Pool<sqlx::Postgres>) {
+        let pg_database = PgDatabase::query(pool).await;
+        PgDatabaseXidLimits::process_pg_database(pg_database).await;
+    }
+    async fn query(pool: &Pool<sqlx::Postgres>) -> Vec<PgDatabase> {
         let stat_database: Vec<PgDatabase> = query_as(
             "
             select clock_timestamp() as timestamp,
@@ -1625,9 +1731,160 @@ impl PgDatabase {
         .fetch_all(pool)
         .await
         .expect("error executing query");
-        //sql_rows.sort_by_key(|a| a.query_time.as_ref().map_or(0_i64, |r| r.microseconds));
-        //sql_rows.reverse();
         stat_database
+    }
+}
+
+// this pg_database is consistent with postgres version 15
+#[derive(Debug, FromRow, Clone)]
+pub struct PgSettings {
+    pub timestamp: DateTime<Local>,
+    pub name: String,
+    pub setting: String,
+    pub unit: Option<String>,
+    pub category: String,
+    pub boot_val: String,
+    pub reset_val: String,
+    pub sourcefile: Option<String>,
+    pub sourceline: Option<i64>,
+    pub pending_restart: bool,
+}
+
+impl PgSettings {
+    pub async fn fetch_and_add_to_data(pool: &Pool<sqlx::Postgres>) {
+        let pg_settings = PgSettings::query(pool).await;
+        PgSettings::add_to_deltatable(pg_settings).await;
+    }
+    async fn query(pool: &Pool<sqlx::Postgres>) -> Vec<PgSettings> {
+        let pg_settings: Vec<PgSettings> = query_as(
+            "
+            select clock_timestamp() as timestamp,
+                   name, 
+                   setting, 
+                   unit,
+                   category,
+                   boot_val,
+                   reset_val, 
+                   sourcefile, 
+                   sourceline,
+                   pending_restart
+            from   pg_settings
+            where  name in (
+                   'autovacuum_freeze_max_age',
+                   'autovacuum_multixact_freeze_max_age',
+                   'vacuum_freeze_min_age',
+                   'vacuum_freeze_table_age',
+                   'vacuum_failsafe_age',
+                   'vacuum_multixact_freeze_min_age',
+                   'vacuum_multixact_freeze_table_age',
+                   'vacuum_multixact_failsafe_age'
+                   )
+        ",
+        )
+        .fetch_all(pool)
+        .await
+        .expect("error executing query");
+        pg_settings
+    }
+    async fn add_to_deltatable(pg_settings: Vec<PgSettings>) {
+        let pg_settings_timestamp = pg_settings.last().map(|r| r.timestamp).unwrap();
+
+        DeltaTable::add_or_update(
+            "pg_settings.autovacuum_freeze_max_age",
+            pg_settings_timestamp,
+            *pg_settings
+                .iter()
+                .filter(|r| r.name == "autovacuum_freeze_max_age")
+                .filter_map(|r| r.setting.parse::<f64>().ok())
+                .collect::<Vec<f64>>()
+                .first()
+                .unwrap(),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_settings.vacuum_freeze_min_age",
+            pg_settings_timestamp,
+            *pg_settings
+                .iter()
+                .filter(|r| r.name == "vacuum_freeze_min_age")
+                .filter_map(|r| r.setting.parse::<f64>().ok())
+                .collect::<Vec<f64>>()
+                .first()
+                .unwrap(),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_settings.vacuum_freeze_table_age",
+            pg_settings_timestamp,
+            *pg_settings
+                .iter()
+                .filter(|r| r.name == "vacuum_freeze_table_age")
+                .filter_map(|r| r.setting.parse::<f64>().ok())
+                .collect::<Vec<f64>>()
+                .first()
+                .unwrap(),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_settings.vacuum_failsafe_age",
+            pg_settings_timestamp,
+            *pg_settings
+                .iter()
+                .filter(|r| r.name == "vacuum_failsafe_age")
+                .filter_map(|r| r.setting.parse::<f64>().ok())
+                .collect::<Vec<f64>>()
+                .first()
+                .unwrap(),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_settings.autovacuum_multixact_freeze_max_age",
+            pg_settings_timestamp,
+            *pg_settings
+                .iter()
+                .filter(|r| r.name == "autovacuum_multixact_freeze_max_age")
+                .filter_map(|r| r.setting.parse::<f64>().ok())
+                .collect::<Vec<f64>>()
+                .first()
+                .unwrap(),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_settings.vacuum_multixact_freeze_min_age",
+            pg_settings_timestamp,
+            *pg_settings
+                .iter()
+                .filter(|r| r.name == "vacuum_multixact_freeze_min_age")
+                .filter_map(|r| r.setting.parse::<f64>().ok())
+                .collect::<Vec<f64>>()
+                .first()
+                .unwrap(),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_settings.vacuum_multixact_freeze_table_age",
+            pg_settings_timestamp,
+            *pg_settings
+                .iter()
+                .filter(|r| r.name == "vacuum_multixact_freeze_table_age")
+                .filter_map(|r| r.setting.parse::<f64>().ok())
+                .collect::<Vec<f64>>()
+                .first()
+                .unwrap(),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_settings.vacuum_multixact_failsafe_age",
+            pg_settings_timestamp,
+            *pg_settings
+                .iter()
+                .filter(|r| r.name == "vacuum_multixact_failsafe_age")
+                .filter_map(|r| r.setting.parse::<f64>().ok())
+                .collect::<Vec<f64>>()
+                .first()
+                .unwrap(),
+        )
+        .await;
     }
 }
 
@@ -1698,7 +1955,7 @@ pub async fn processor_main() -> Result<()> {
     let pool = PgPoolOptions::new()
         .min_connections(1)
         .max_connections(1)
-        .connect("postgres://frits.hoogland@frits.hoogland?host=/tmp/")
+        .connect(&ARGS.connection_string)
         .await
         .expect("Error creating connection pool");
 
@@ -1712,29 +1969,7 @@ pub async fn processor_main() -> Result<()> {
         PgStatDatabase::fetch_and_add_to_data(&pool).await;
         PgStatBgWriter::fetch_and_add_to_data(&pool).await;
         PgStatWal::fetch_and_add_to_data(&pool).await;
-        let pg_database = PgDatabase::query(&pool).await;
-        DeltaTable::add_or_update(
-            "pg_database.age_datfrozenxid",
-            pg_database.first().map(|r| r.timestamp).unwrap(),
-            pg_database
-                .iter()
-                .map(|r| r.age_datfrozenxid)
-                .max()
-                .unwrap() as f64,
-        )
-        .await;
-        DeltaTable::add_or_update(
-            "pg_database.age_datminmxid",
-            pg_database.first().map(|r| r.timestamp).unwrap(),
-            pg_database.iter().map(|r| r.age_datminmxid).max().unwrap() as f64,
-        )
-        .await;
-        //println!(
-        //    "{:#?}",
-        //    pg_database.iter().map(|r| r.age_datfrozenxid).max()
-        //);
-        //println!("{:#?}", DELTATABLE.read().await);
-        //println!("{:?}", DATA.wait_event_activity.read().await);
-        //println!("{:#?}", DATA.pg_stat_activity.read().await.iter().last());
+        PgSettings::fetch_and_add_to_data(&pool).await;
+        PgDatabase::fetch_and_add_to_data(&pool).await;
     }
 }
