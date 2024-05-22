@@ -1,7 +1,9 @@
 [package]
 name = "pas"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
+license = "apache-2.0"
+description = "A utility to obtain statistics from a postgres database cluster."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -31,3 +33,17 @@ sqlx = { version = "0.7.4", features = [
   "bigdecimal",
 ] }
 tokio = { version = "1.37.0", features = ["full"] }
+
+[package.metadata.generate-rpm]
+assets = [
+  { source = "target/release/pas", dest = "/usr/local/bin/pas", mode = "0755" },
+]
+release = "1.el8"
+
+[package.metadata.deb]
+copyright = "2024, Frits Hoogland <fhoogland@gmail.com>"
+maintainer = "Frits Hoogland <fhoogland@gmail.com>"
+depends = "$auto"
+section = "utility"
+priority = "optional"
+assets = [["target/release/pas", "/usr/local/bin/", "755"]]
