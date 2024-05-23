@@ -1746,7 +1746,7 @@ pub struct PgSettings {
     pub boot_val: String,
     pub reset_val: String,
     pub sourcefile: Option<String>,
-    pub sourceline: Option<i64>,
+    pub sourceline: Option<i32>,
     pub pending_restart: bool,
 }
 
