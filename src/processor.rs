@@ -104,7 +104,7 @@ impl PgStatActivity {
                    usesysid,
                    usename, 
                    application_name, 
-                   client_addr,
+                   client_addr::text,
                    client_hostname,
                    client_port,
                    cast(extract(epoch from (clock_timestamp()-backend_start)) as bigint) as backend_time,
