@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sqlx::{
     postgres::{types::Oid, PgPoolOptions},
-    query_as, FromRow, Pool,
+    query_as, Executor, FromRow, Pool,
 };
 use std::{collections::HashMap, time::Duration};
 use tokio::{
@@ -1955,6 +1955,12 @@ pub async fn processor_main() -> Result<()> {
     let pool = PgPoolOptions::new()
         .min_connections(1)
         .max_connections(1)
+        .after_connect(|connection, _| {
+            Box::pin(async move {
+                connection.execute("set application_name = 'PAS';").await?;
+                Ok(())
+            })
+        })
         .connect(&ARGS.connection_string)
         .await
         .expect("Error creating connection pool");
