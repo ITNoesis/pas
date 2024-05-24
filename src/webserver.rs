@@ -3912,6 +3912,7 @@ pub fn ash_by_query_id(
     contextarea
         .configure_mesh()
         .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
+        .y_labels(qc.len())
         .y_label_formatter(&|v| {
             format!(
                 "{}",
@@ -3941,7 +3942,7 @@ pub fn ash_by_query_id(
                 ],
                 GREEN.filled(),
             );
-            bar.set_margin(5, 5, 0, 0);
+            bar.set_margin(2, 2, 0, 0);
             bar
         }))
         .unwrap()
@@ -3965,7 +3966,7 @@ pub fn ash_by_query_id(
                 ],
                 BLUE_600.filled(),
             );
-            bar.set_margin(5, 5, 0, 0);
+            bar.set_margin(2, 2, 0, 0);
             bar
         }))
         .unwrap()
@@ -3989,7 +3990,7 @@ pub fn ash_by_query_id(
                 ],
                 RED.filled(),
             );
-            bar.set_margin(5, 5, 0, 0);
+            bar.set_margin(2, 2, 0, 0);
             bar
         }))
         .unwrap()
@@ -4016,7 +4017,7 @@ pub fn ash_by_query_id(
                 ],
                 RED_900.filled(),
             );
-            bar.set_margin(5, 5, 0, 0);
+            bar.set_margin(2, 2, 0, 0);
             bar
         }))
         .unwrap()
@@ -4043,7 +4044,7 @@ pub fn ash_by_query_id(
                 ],
                 PINK_A100.filled(),
             );
-            bar.set_margin(5, 5, 0, 0);
+            bar.set_margin(2, 2, 0, 0);
             bar
         }))
         .unwrap()
@@ -4073,7 +4074,7 @@ pub fn ash_by_query_id(
                 ],
                 BROWN.filled(),
             );
-            bar.set_margin(5, 5, 0, 0);
+            bar.set_margin(2, 2, 0, 0);
             bar
         }))
         .unwrap()
@@ -4103,7 +4104,7 @@ pub fn ash_by_query_id(
                 ],
                 GREEN_800.filled(),
             );
-            bar.set_margin(5, 5, 0, 0);
+            bar.set_margin(2, 2, 0, 0);
             bar
         }))
         .unwrap()
@@ -4140,7 +4141,7 @@ pub fn ash_by_query_id(
                 ],
                 GREY.filled(),
             );
-            bar.set_margin(5, 5, 0, 0);
+            bar.set_margin(2, 2, 0, 0);
             bar
         }))
         .unwrap()
@@ -4185,7 +4186,7 @@ pub fn ash_by_query_id(
                 ],
                 LIGHTBLUE_300.filled(),
             );
-            bar.set_margin(5, 5, 0, 0);
+            bar.set_margin(2, 2, 0, 0);
             bar
         }))
         .unwrap()
@@ -4234,7 +4235,7 @@ pub fn ash_by_query_id(
                 ],
                 PURPLE.filled(),
             );
-            bar.set_margin(5, 5, 0, 0);
+            bar.set_margin(2, 2, 0, 0);
             bar
         }))
         .unwrap()

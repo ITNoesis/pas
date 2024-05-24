@@ -2,10 +2,8 @@ name: build_rpm_deb
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - 'Cargo.toml'
+    tags:
+      - 'v*'
 
 env:
   CARGO_TERM_COLOR: always
