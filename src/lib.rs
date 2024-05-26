@@ -12,14 +12,10 @@ pub mod processor;
 pub mod reader;
 pub mod webserver;
 
-use processor::PgCurrentWaitTypes;
-use processor::PgStatActivity;
-use processor::PgWaitTypeActivity;
-
-use crate::processor::{
-    PgDatabaseXidLimits, PgStatBgWriterSum, PgStatDatabaseSum, PgStatWalSum, PgWaitTypeBufferPin,
-    PgWaitTypeClient, PgWaitTypeExtension, PgWaitTypeIO, PgWaitTypeIPC, PgWaitTypeLWLock,
-    PgWaitTypeLock, PgWaitTypeTimeout,
+use processor::{
+    PgDatabaseXidLimits, PgStatActivity, PgStatBgWriterSum, PgStatDatabaseSum, PgStatWalSum,
+    PgWaitTypeActivity, PgWaitTypeBufferPin, PgWaitTypeClient, PgWaitTypeExtension, PgWaitTypeIO,
+    PgWaitTypeIPC, PgWaitTypeLWLock, PgWaitTypeLock, PgWaitTypeTimeout, PgWaitTypes,
 };
 
 static LABEL_AREA_SIZE_LEFT: i32 = 100;
@@ -87,7 +83,7 @@ pub struct Opts {
     /// Read history file(s), don't do active fetching
     #[arg(short = 'r', long, value_name = "read archives")]
     pub read: Option<String>,
-    /// Read history file(s), don't do active fetching
+    /// Connection specification
     #[arg(
         short = 'c',
         long,
@@ -102,7 +98,7 @@ pub static ARGS: Lazy<Opts> = Lazy::new(Opts::parse);
 #[derive(Debug)]
 pub struct Data {
     pub pg_stat_activity: RwLock<BoundedVecDeque<(DateTime<Local>, Vec<PgStatActivity>)>>,
-    pub wait_event_types: RwLock<BoundedVecDeque<(DateTime<Local>, PgCurrentWaitTypes)>>,
+    pub wait_event_types: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypes)>>,
     pub wait_event_activity: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeActivity)>>,
     pub wait_event_bufferpin: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeBufferPin)>>,
     pub wait_event_client: RwLock<BoundedVecDeque<(DateTime<Local>, PgWaitTypeClient)>>,
@@ -143,7 +139,7 @@ impl Data {
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct DataTransit {
     pub pg_stat_activity: Vec<(DateTime<Local>, Vec<PgStatActivity>)>,
-    pub wait_event_types: Vec<(DateTime<Local>, PgCurrentWaitTypes)>,
+    pub wait_event_types: Vec<(DateTime<Local>, PgWaitTypes)>,
     pub wait_event_activity: Vec<(DateTime<Local>, PgWaitTypeActivity)>,
     pub wait_event_bufferpin: Vec<(DateTime<Local>, PgWaitTypeBufferPin)>,
     pub wait_event_client: Vec<(DateTime<Local>, PgWaitTypeClient)>,

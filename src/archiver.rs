@@ -1,24 +1,13 @@
-use std::{env::current_dir, fs::write};
-
-use crate::{
-    processor::{
-        PgCurrentWaitTypes, PgDatabaseXidLimits, PgStatBgWriterSum, PgStatDatabaseSum,
-        PgStatWalSum, PgWaitTypeBufferPin, PgWaitTypeIO, PgWaitTypeIPC, PgWaitTypeLWLock,
-        PgWaitTypeLock, PgWaitTypeTimeout,
-    },
-    ARGS,
+use crate::processor::{
+    PgDatabaseXidLimits, PgStatActivity, PgStatBgWriterSum, PgStatDatabaseSum, PgStatWalSum,
+    PgWaitTypeActivity, PgWaitTypeBufferPin, PgWaitTypeClient, PgWaitTypeExtension, PgWaitTypeIO,
+    PgWaitTypeIPC, PgWaitTypeLWLock, PgWaitTypeLock, PgWaitTypeTimeout, PgWaitTypes,
 };
-use crate::{
-    processor::{PgStatActivity, PgWaitTypeClient},
-    DataTransit,
-};
-use crate::{
-    processor::{PgWaitTypeActivity, PgWaitTypeExtension},
-    DATA,
-};
+use crate::{DataTransit, ARGS, DATA};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, DurationRound, Local};
+use std::{env::current_dir, fs::write};
 use tokio::time::{interval, Duration, MissedTickBehavior};
 
 pub async fn archiver_main() -> Result<()> {
@@ -44,6 +33,23 @@ pub async fn save_to_disk(high_time: DateTime<Local>) -> Result<()> {
     let mut transition = DataTransit::default();
     let low_time = high_time - chrono::Duration::minutes(ARGS.archiver_interval);
 
+    println!("archiver: low_time: {}, high_time: {}", low_time, high_time);
+
+    macro_rules! generate_transition_collections {
+        ($([$category:ident, $struct:ident]),*) => {
+            $(
+            transition.$category = DATA
+                .$category
+                .read()
+                .await
+                .iter()
+                .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
+                .cloned()
+                .collect::<Vec<(DateTime<Local>, $struct)>>();
+            )*
+        };
+    }
+    // pg_stat_activity contains a vector
     transition.pg_stat_activity = DATA
         .pg_stat_activity
         .read()
@@ -52,118 +58,23 @@ pub async fn save_to_disk(high_time: DateTime<Local>) -> Result<()> {
         .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
         .cloned()
         .collect::<Vec<(DateTime<Local>, Vec<PgStatActivity>)>>();
-    transition.wait_event_types = DATA
-        .wait_event_types
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgCurrentWaitTypes)>>();
-    transition.wait_event_activity = DATA
-        .wait_event_activity
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgWaitTypeActivity)>>();
-    transition.wait_event_bufferpin = DATA
-        .wait_event_bufferpin
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgWaitTypeBufferPin)>>();
-    transition.wait_event_client = DATA
-        .wait_event_client
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgWaitTypeClient)>>();
-    transition.wait_event_extension = DATA
-        .wait_event_extension
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgWaitTypeExtension)>>();
-    transition.wait_event_io = DATA
-        .wait_event_io
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgWaitTypeIO)>>();
-    transition.wait_event_ipc = DATA
-        .wait_event_ipc
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgWaitTypeIPC)>>();
-    transition.wait_event_lock = DATA
-        .wait_event_lock
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgWaitTypeLock)>>();
-    transition.wait_event_lwlock = DATA
-        .wait_event_lwlock
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgWaitTypeLWLock)>>();
-    transition.wait_event_timeout = DATA
-        .wait_event_timeout
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgWaitTypeTimeout)>>();
-    transition.pg_stat_database_sum = DATA
-        .pg_stat_database_sum
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgStatDatabaseSum)>>();
-    transition.pg_stat_bgwriter_sum = DATA
-        .pg_stat_bgwriter_sum
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgStatBgWriterSum)>>();
-    transition.pg_stat_wal_sum = DATA
-        .pg_stat_wal_sum
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgStatWalSum)>>();
-    transition.pg_database_xid_limits = DATA
-        .pg_database_xid_limits
-        .read()
-        .await
-        .iter()
-        .filter(|(ts, _)| *ts > low_time && *ts <= high_time)
-        .cloned()
-        .collect::<Vec<(DateTime<Local>, PgDatabaseXidLimits)>>();
+
+    generate_transition_collections!(
+        [wait_event_types, PgWaitTypes],
+        [wait_event_activity, PgWaitTypeActivity],
+        [wait_event_bufferpin, PgWaitTypeBufferPin],
+        [wait_event_client, PgWaitTypeClient],
+        [wait_event_extension, PgWaitTypeExtension],
+        [wait_event_io, PgWaitTypeIO],
+        [wait_event_ipc, PgWaitTypeIPC],
+        [wait_event_lock, PgWaitTypeLock],
+        [wait_event_lwlock, PgWaitTypeLWLock],
+        [wait_event_timeout, PgWaitTypeTimeout],
+        [pg_stat_database_sum, PgStatDatabaseSum],
+        [pg_stat_bgwriter_sum, PgStatBgWriterSum],
+        [pg_stat_wal_sum, PgStatWalSum],
+        [pg_database_xid_limits, PgDatabaseXidLimits]
+    );
 
     let current_directory = current_dir()?;
     let filename = current_directory.join(format!(

@@ -1,7 +1,3 @@
-use crate::processor::wait_events::PgWaitTypeActivity;
-use crate::processor::wait_events::PgWaitTypeBufferPin;
-use crate::processor::wait_events::PgWaitTypeClient;
-use crate::processor::wait_events::PgWaitTypes;
 use crate::DATA;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
@@ -11,11 +7,11 @@ use sqlx::{query_as, FromRow, Pool};
 #[derive(Debug, FromRow, Clone, Serialize, Deserialize)]
 pub struct PgStatActivity {
     pub timestamp: DateTime<Local>,
-    pub datid: Option<i64>,
+    pub datid: Option<i32>,
     pub datname: Option<String>,
     pub pid: i32,
     pub leader_pid: Option<i32>,
-    pub usesysid: Option<i64>,
+    pub usesysid: Option<i32>,
     pub usename: Option<String>,
     pub application_name: Option<String>,
     pub client_addr: Option<String>,
@@ -43,52 +39,6 @@ impl PgStatActivity {
             .write()
             .await
             .push_back((current_timestamp, pg_stat_activity.clone()));
-        PgWaitTypes::process(current_timestamp, pg_stat_activity.clone());
-        PgWaitTypeActivity::process(current_timestamp, pg_stat_activity.clone());
-        PgWaitTypeBufferPin::process(current_timestamp, pg_stat_activity.clone());
-        PgWaitTypeClient::process(current_timestamp, pg_stat_activity);
-        /*
-                DATA.wait_event_types.write().await.push_back((
-                    current_timestamp,
-                    PgCurrentWaitTypes::process_pg_stat_activity(pg_stat_activity.clone()).await,
-                ));
-                DATA.wait_event_activity.write().await.push_back((
-                    current_timestamp,
-                    PgWaitTypeActivity::process_pg_stat_activity(pg_stat_activity.clone()).await,
-                ));
-                DATA.wait_event_bufferpin.write().await.push_back((
-                    current_timestamp,
-                    PgWaitTypeBufferPin::process_pg_stat_activity(pg_stat_activity.clone()).await,
-                ));
-                DATA.wait_event_client.write().await.push_back((
-                    current_timestamp,
-                    PgWaitTypeClient::process_pg_stat_activity(pg_stat_activity.clone()).await,
-                ));
-                DATA.wait_event_extension.write().await.push_back((
-                    current_timestamp,
-                    PgWaitTypeExtension::process_pg_stat_activity(pg_stat_activity.clone()).await,
-                ));
-                DATA.wait_event_io.write().await.push_back((
-                    current_timestamp,
-                    PgWaitTypeIO::process_pg_stat_activity(pg_stat_activity.clone()).await,
-                ));
-                DATA.wait_event_ipc.write().await.push_back((
-                    current_timestamp,
-                    PgWaitTypeIPC::process_pg_stat_activity(pg_stat_activity.clone()).await,
-                ));
-                DATA.wait_event_lock.write().await.push_back((
-                    current_timestamp,
-                    PgWaitTypeLock::process_pg_stat_activity(pg_stat_activity.clone()).await,
-                ));
-                DATA.wait_event_lwlock.write().await.push_back((
-                    current_timestamp,
-                    PgWaitTypeLWLock::process_pg_stat_activity(pg_stat_activity.clone()).await,
-                ));
-                DATA.wait_event_timeout.write().await.push_back((
-                    current_timestamp,
-                    PgWaitTypeTimeout::process_pg_stat_activity(pg_stat_activity).await,
-                ));
-        */
     }
     async fn query(pool: &Pool<sqlx::Postgres>) -> Vec<PgStatActivity> {
         let mut sql_rows: Vec<PgStatActivity> = query_as(
