@@ -1,3 +1,4 @@
+use crate::webserver::wait_type_color;
 use crate::DATA;
 use crate::{
     CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE, LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE,
@@ -9,25 +10,6 @@ use plotters::backend::RGBPixel;
 use plotters::chart::SeriesLabelPosition::UpperLeft;
 use plotters::coord::Shift;
 use plotters::prelude::*;
-use plotters::style::full_palette::{
-    BLUE_600, BROWN, GREEN_800, GREY, LIGHTBLUE_300, PINK_A100, PURPLE, RED_900,
-};
-
-fn wait_type_color(wait_event_type: &str) -> RGBColor {
-    match wait_event_type {
-        "activity" => PURPLE,
-        "buffer_pin" => LIGHTBLUE_300,
-        "client" => GREY,
-        "extension" => GREEN_800,
-        "timeout" => BROWN,
-        "ipc" => PINK_A100,
-        "lwlock" => RED_900,
-        "lock" => RED,
-        "io" => BLUE_600,
-        "on_cpu" => GREEN,
-        &_ => todo!(),
-    }
-}
 
 pub fn wait_event_type_plot(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
@@ -79,6 +61,19 @@ pub fn wait_event_type_plot(
         .sum();
 
     multi_backend[backend_number].fill(&WHITE).unwrap();
+
+    let (_, y_size) = multi_backend[backend_number].dim_in_pixel();
+    if y_size < 317 {
+        multi_backend[backend_number]
+            .draw(&Text::new(
+                "The set heigth is too small to display this graph (wait event types)".to_string(),
+                (10, 10),
+                (MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE).into_font(),
+            ))
+            .unwrap();
+        return;
+    }
+
     let mut contextarea = ChartBuilder::on(&multi_backend[backend_number])
         .set_label_area_size(LabelAreaPosition::Left, LABEL_AREA_SIZE_LEFT)
         .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
@@ -95,6 +90,7 @@ pub fn wait_event_type_plot(
         .x_label_formatter(&|timestamp| timestamp.format("%Y-%m-%dT%H:%M:%S").to_string())
         .x_desc("Time")
         .y_desc("Active sessions")
+        .y_label_formatter(&|sessions| format!("{:4.0}", sessions))
         .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
         .draw()
         .unwrap();

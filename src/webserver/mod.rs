@@ -2,6 +2,9 @@ use anyhow::Result;
 use axum::{extract::Path, response::Html, response::IntoResponse, routing::get, Router};
 use image::{DynamicImage, ImageFormat};
 use plotters::prelude::*;
+use plotters::style::full_palette::{
+    BLUE_600, BROWN, GREEN_800, GREY, LIGHTBLUE_300, PINK_A100, PURPLE, RED_900,
+};
 use std::io::Cursor;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -23,6 +26,22 @@ pub use wait_events::{
 };
 pub use wal::{wal_io_times, wal_size};
 pub use xid_age::xid_age;
+
+pub fn wait_type_color(wait_event_type: &str) -> RGBColor {
+    match wait_event_type {
+        "activity" => PURPLE,
+        "buffer_pin" => LIGHTBLUE_300,
+        "client" => GREY,
+        "extension" => GREEN_800,
+        "timeout" => BROWN,
+        "ipc" => PINK_A100,
+        "lwlock" => RED_900,
+        "lock" => RED,
+        "io" => BLUE_600,
+        "on_cpu" => GREEN,
+        &_ => todo!(),
+    }
+}
 
 pub async fn webserver_main() -> Result<()> {
     let app = Router::new()

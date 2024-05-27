@@ -7,10 +7,10 @@ use crate::{
 use futures::executor;
 use human_bytes::human_bytes;
 use plotters::backend::RGBPixel;
-use plotters::chart::SeriesLabelPosition::UpperLeft;
-use plotters::coord::Shift;
 use plotters::prelude::full_palette::PURPLE;
 use plotters::prelude::*;
+use plotters::{chart::SeriesLabelPosition::UpperLeft, style::full_palette::GREEN_800};
+use plotters::{coord::Shift, style::full_palette::RED_300};
 
 pub fn io_times(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
@@ -124,6 +124,43 @@ pub fn io_times(
         .draw()
         .unwrap();
 
+    // checkpoints timed
+    contextarea
+        .draw_series(
+            bgwriter_events
+                .iter()
+                .filter(|(_, b)| b.checkpoints_timed > 0_f64)
+                .map(|(timestamp, _)| TriangleMarker::new((*timestamp, -12_f64), 5, GREEN_800)),
+        )
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10}",
+            "checkpoints_timed",
+            bgwriter_events
+                .iter()
+                .map(|(_, b)| b.checkpoints_timed)
+                .sum::<f64>()
+        ))
+        .legend(move |(x, y)| TriangleMarker::new((x, y), 5, GREEN_800.filled()));
+    // checkpoints req
+    contextarea
+        .draw_series(
+            bgwriter_events
+                .iter()
+                .filter(|(_, b)| b.checkpoints_req > 0_f64)
+                .map(|(timestamp, _)| TriangleMarker::new((*timestamp, -12_f64), 5, RED_300)),
+        )
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10}",
+            "checkpoints_req",
+            bgwriter_events
+                .iter()
+                .map(|(_, b)| b.checkpoints_req)
+                .sum::<f64>()
+        ))
+        .legend(move |(x, y)| TriangleMarker::new((x, y), 5, RED_300.filled()));
+    //
     // This is a dummy plot for the sole intention to write a header in the legend.
     contextarea
         .draw_series(LineSeries::new(
@@ -607,6 +644,58 @@ pub fn io_bandwidth(
                 ))
         ))
         .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()));
+    // checkpoints timed
+    contextarea
+        .draw_series(
+            bgwriter_events
+                .iter()
+                .filter(|(_, b)| b.checkpoints_timed > 0_f64)
+                .map(|(timestamp, _)| TriangleMarker::new((*timestamp, -12_f64), 6, BLACK)),
+        )
+        .unwrap();
+    contextarea
+        .draw_series(
+            bgwriter_events
+                .iter()
+                .filter(|(_, b)| b.checkpoints_timed > 0_f64)
+                .map(|(timestamp, _)| TriangleMarker::new((*timestamp, -12_f64), 5, GREEN_800)),
+        )
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10}",
+            "checkpoints_timed",
+            bgwriter_events
+                .iter()
+                .map(|(_, b)| b.checkpoints_timed)
+                .sum::<f64>()
+        ))
+        .legend(move |(x, y)| TriangleMarker::new((x, y), 5, GREEN_800.filled()));
+    // checkpoints req
+    contextarea
+        .draw_series(
+            bgwriter_events
+                .iter()
+                .filter(|(_, b)| b.checkpoints_req > 0_f64)
+                .map(|(timestamp, _)| TriangleMarker::new((*timestamp, -12_f64), 6, BLACK)),
+        )
+        .unwrap();
+    contextarea
+        .draw_series(
+            bgwriter_events
+                .iter()
+                .filter(|(_, b)| b.checkpoints_req > 0_f64)
+                .map(|(timestamp, _)| TriangleMarker::new((*timestamp, -12_f64), 5, RED_300)),
+        )
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10}",
+            "checkpoints_req",
+            bgwriter_events
+                .iter()
+                .map(|(_, b)| b.checkpoints_req)
+                .sum::<f64>()
+        ))
+        .legend(move |(x, y)| TriangleMarker::new((x, y), 5, RED_300.filled()));
 
     contextarea
         .configure_series_labels()

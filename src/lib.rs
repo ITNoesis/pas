@@ -77,7 +77,7 @@ pub struct Opts {
         short = 'H',
         long,
         value_name = "graph buffer height",
-        default_value = "800"
+        default_value = "1000"
     )]
     pub graph_height: u32,
     /// Read history file(s), don't do active fetching

@@ -1,3 +1,4 @@
+use crate::webserver::wait_type_color;
 use crate::DATA;
 use crate::{
     CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE, LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE,
@@ -8,9 +9,6 @@ use plotters::backend::RGBPixel;
 use plotters::chart::SeriesLabelPosition::LowerRight;
 use plotters::coord::Shift;
 use plotters::prelude::*;
-use plotters::style::full_palette::{
-    BLUE_600, BROWN, GREEN_800, GREY, LIGHTBLUE_300, PINK_A100, PURPLE, RED_900,
-};
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
@@ -29,7 +27,7 @@ pub struct QueryIdAndWaitTypes {
     pub timeout: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct QueryCollection {
     query_id: i64,
     query: String,
@@ -120,10 +118,27 @@ pub fn ash_by_query_id(
     }
     qc.sort_by(|b, a| b.total.cmp(&a.total));
 
-    let total_number_queryids = if qc.len() > 1 { qc.len() - 1 } else { qc.len() };
-    let max_total_queryids = (qc.iter().map(|d| d.total).max().unwrap_or_default() * 110) / 100;
-    let tot_total: usize = qc.iter().map(|d| d.total).sum();
+    let qc_count = if qc.len() > 1 { qc.len() - 1 } else { qc.len() };
+    let qc_total_max = (qc.iter().map(|d| d.total).max().unwrap_or_default() * 110) / 100;
+    let qc_total_sum: usize = qc.iter().map(|d| d.total).sum();
+
     multi_backend[backend_number].fill(&WHITE).unwrap();
+
+    let (_, y_size) = multi_backend[backend_number].dim_in_pixel();
+    if y_size < 317 {
+        multi_backend[backend_number]
+            .draw(&Text::new(
+                "The set heigth is too small to display this graph (query id by number of samples)"
+                    .to_string(),
+                (10, 10),
+                (MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE).into_font(),
+            ))
+            .unwrap();
+        return;
+    }
+
+    //println!("count:{}, y:{}", qc_count, y_size);
+
     let mut contextarea = ChartBuilder::on(&multi_backend[backend_number])
         .set_label_area_size(LabelAreaPosition::Left, 200)
         .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
@@ -131,10 +146,7 @@ pub fn ash_by_query_id(
             "Query id by number of samples",
             (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE),
         )
-        .build_cartesian_2d(
-            0..max_total_queryids,
-            (0..total_number_queryids).into_segmented(),
-        )
+        .build_cartesian_2d(0..qc_total_max, (0..qc_count).into_segmented())
         .unwrap();
     contextarea
         .configure_mesh()
@@ -160,323 +172,68 @@ pub fn ash_by_query_id(
         .draw()
         .unwrap();
 
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
-            let mut bar = Rectangle::new(
-                [
-                    (0, SegmentValue::Exact(y)),
-                    (x.on_cpu, SegmentValue::Exact(y + 1)),
-                ],
-                GREEN.filled(),
-            );
-            bar.set_margin(2, 2, 0, 0);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()))
-        .label(format!(
-            "{:10} {:>8} {:>6.2}%",
-            "On CPU",
-            qc.iter().map(|d| d.on_cpu).sum::<usize>(),
-            if tot_total == 0 {
-                0_f64
-            } else {
-                qc.iter().map(|d| d.on_cpu).sum::<usize>() as f64 / tot_total as f64 * 100_f64
-            },
-        ));
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
-            let mut bar = Rectangle::new(
-                [
-                    (x.on_cpu, SegmentValue::Exact(y)),
-                    (x.on_cpu + x.io, SegmentValue::Exact(y + 1)),
-                ],
-                BLUE_600.filled(),
-            );
-            bar.set_margin(2, 2, 0, 0);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE_600.filled()))
-        .label(format!(
-            "{:10} {:>8} {:>6.2}%",
-            "IO",
-            qc.iter().map(|d| d.io).sum::<usize>(),
-            if tot_total == 0 {
-                0_f64
-            } else {
-                qc.iter().map(|d| d.io).sum::<usize>() as f64 / tot_total as f64 * 100_f64
-            },
-        ));
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
-            let mut bar = Rectangle::new(
-                [
-                    (x.on_cpu + x.io, SegmentValue::Exact(y)),
-                    (x.on_cpu + x.io + x.lock, SegmentValue::Exact(y + 1)),
-                ],
-                RED.filled(),
-            );
-            bar.set_margin(2, 2, 0, 0);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()))
-        .label(format!(
-            "{:10} {:>8} {:>6.2}%",
-            "Lock",
-            qc.iter().map(|d| d.lock).sum::<usize>(),
-            if tot_total == 0 {
-                0_f64
-            } else {
-                qc.iter().map(|d| d.lock).sum::<usize>() as f64 / tot_total as f64 * 100_f64
-            },
-        ));
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
-            let mut bar = Rectangle::new(
-                [
-                    (x.on_cpu + x.io + x.lock, SegmentValue::Exact(y)),
-                    (
-                        x.on_cpu + x.io + x.lock + x.lwlock,
-                        SegmentValue::Exact(y + 1),
-                    ),
-                ],
-                RED_900.filled(),
-            );
-            bar.set_margin(2, 2, 0, 0);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED_900.filled()))
-        .label(format!(
-            "{:10} {:>8} {:>6.2}%",
-            "LWLock",
-            qc.iter().map(|d| d.lwlock).sum::<usize>(),
-            if tot_total == 0 {
-                0_f64
-            } else {
-                qc.iter().map(|d| d.lwlock).sum::<usize>() as f64 / tot_total as f64 * 100_f64
-            },
-        ));
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
-            let mut bar = Rectangle::new(
-                [
-                    (x.on_cpu + x.io + x.lock + x.lwlock, SegmentValue::Exact(y)),
-                    (
-                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc,
-                        SegmentValue::Exact(y + 1),
-                    ),
-                ],
-                PINK_A100.filled(),
-            );
-            bar.set_margin(2, 2, 0, 0);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PINK_A100.filled()))
-        .label(format!(
-            "{:10} {:>8} {:>6.2}%",
-            "IPC",
-            qc.iter().map(|d| d.ipc).sum::<usize>(),
-            if tot_total == 0 {
-                0_f64
-            } else {
-                qc.iter().map(|d| d.ipc).sum::<usize>() as f64 / tot_total as f64 * 100_f64
-            },
-        ));
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc,
-                        SegmentValue::Exact(y),
-                    ),
-                    (
-                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc + x.timeout,
-                        SegmentValue::Exact(y + 1),
-                    ),
-                ],
-                BROWN.filled(),
-            );
-            bar.set_margin(2, 2, 0, 0);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BROWN.filled()))
-        .label(format!(
-            "{:10} {:>8} {:>6.2}%",
-            "Timeout",
-            qc.iter().map(|d| d.timeout).sum::<usize>(),
-            if tot_total == 0 {
-                0_f64
-            } else {
-                qc.iter().map(|d| d.timeout).sum::<usize>() as f64 / tot_total as f64 * 100_f64
-            },
-        ));
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc + x.timeout,
-                        SegmentValue::Exact(y),
-                    ),
-                    (
-                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc + x.timeout + x.extension,
-                        SegmentValue::Exact(y + 1),
-                    ),
-                ],
-                GREEN_800.filled(),
-            );
-            bar.set_margin(2, 2, 0, 0);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN_800.filled()))
-        .label(format!(
-            "{:10} {:>8} {:>6.2}%",
-            "Extension",
-            qc.iter().map(|d| d.extension).sum::<usize>(),
-            if tot_total == 0 {
-                0_f64
-            } else {
-                qc.iter().map(|d| d.extension).sum::<usize>() as f64 / tot_total as f64 * 100_f64
-            },
-        ));
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        x.on_cpu + x.io + x.lock + x.lwlock + x.ipc + x.timeout + x.extension,
-                        SegmentValue::Exact(y),
-                    ),
-                    (
-                        x.on_cpu
-                            + x.io
-                            + x.lock
-                            + x.lwlock
-                            + x.ipc
-                            + x.timeout
-                            + x.extension
-                            + x.client,
-                        SegmentValue::Exact(y + 1),
-                    ),
-                ],
-                GREY.filled(),
-            );
-            bar.set_margin(2, 2, 0, 0);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREY.filled()))
-        .label(format!(
-            "{:10} {:>8} {:>6.2}%",
-            "Client",
-            qc.iter().map(|d| d.client).sum::<usize>(),
-            if tot_total == 0 {
-                0_f64
-            } else {
-                qc.iter().map(|d| d.client).sum::<usize>() as f64 / tot_total as f64 * 100_f64
-            },
-        ));
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        x.on_cpu
-                            + x.io
-                            + x.lock
-                            + x.lwlock
-                            + x.ipc
-                            + x.timeout
-                            + x.extension
-                            + x.client,
-                        SegmentValue::Exact(y),
-                    ),
-                    (
-                        x.on_cpu
-                            + x.io
-                            + x.lock
-                            + x.lwlock
-                            + x.ipc
-                            + x.timeout
-                            + x.extension
-                            + x.client
-                            + x.buffer_pin,
-                        SegmentValue::Exact(y + 1),
-                    ),
-                ],
-                LIGHTBLUE_300.filled(),
-            );
-            bar.set_margin(2, 2, 0, 0);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| {
-            Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], LIGHTBLUE_300.filled())
-        })
-        .label(format!(
-            "{:10} {:>8} {:>6.2}%",
-            "Buffer Pin",
-            qc.iter().map(|d| d.buffer_pin).sum::<usize>(),
-            if tot_total == 0 {
-                0_f64
-            } else {
-                qc.iter().map(|d| d.buffer_pin).sum::<usize>() as f64 / tot_total as f64 * 100_f64
-            },
-        ));
-    contextarea
-        .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
-            let mut bar = Rectangle::new(
-                [
-                    (
-                        x.on_cpu
-                            + x.io
-                            + x.lock
-                            + x.lwlock
-                            + x.ipc
-                            + x.timeout
-                            + x.extension
-                            + x.client
-                            + x.buffer_pin,
-                        SegmentValue::Exact(y),
-                    ),
-                    (
-                        x.on_cpu
-                            + x.io
-                            + x.lock
-                            + x.lwlock
-                            + x.ipc
-                            + x.timeout
-                            + x.extension
-                            + x.client
-                            + x.buffer_pin
-                            + x.activity,
-                        SegmentValue::Exact(y + 1),
-                    ),
-                ],
-                PURPLE.filled(),
-            );
-            bar.set_margin(2, 2, 0, 0);
-            bar
-        }))
-        .unwrap()
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PURPLE.filled()))
-        .label(format!(
-            "{:10} {:>8} {:>6.2}%",
-            "Activity",
-            qc.iter().map(|d| d.activity).sum::<usize>(),
-            if tot_total == 0 {
-                0_f64
-            } else {
-                qc.iter().map(|d| d.activity).sum::<usize>() as f64 / tot_total as f64 * 100_f64
-            },
-        ));
+    macro_rules! draw_bars_with_wait_types {
+        ($wait_type:ident $(,)?) => {
+
+            contextarea
+                .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+                    let mut bar = Rectangle::new(
+                        [
+                            (0, SegmentValue::Exact(y)),
+                            (x.$wait_type, SegmentValue::Exact(y + 1)),
+                        ],
+                        wait_type_color(stringify!($wait_type)).filled(),
+                    );
+                    bar.set_margin(2, 2, 0, 0);
+                    bar
+                }))
+                .unwrap()
+                .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], wait_type_color(stringify!($wait_type)).filled()))
+                .label(format!(
+                    "{:10} {:>8} {:>6.2}%",
+                    stringify!($wait_type),
+                    qc.iter().map(|d| d.$wait_type).sum::<usize>(),
+                    if qc_total_sum == 0 {
+                        0_f64
+                    } else {
+                        qc.iter().map(|d| d.$wait_type).sum::<usize>() as f64 / qc_total_sum as f64 * 100_f64
+                    },
+                ));
+
+            };
+        ($wait_type:ident, $($other_types:tt),* $(,)?) => {
+
+            contextarea
+                .draw_series((0..).zip(qc.iter()).map(|(y, x)| {
+                    let mut bar = Rectangle::new(
+                        [
+                            (0, SegmentValue::Exact(y)),
+                            (x.$wait_type, SegmentValue::Exact(y + 1)),
+                        ],
+                        wait_type_color(stringify!($wait_type)).filled(),
+                    );
+                    bar.set_margin(2, 2, 0, 0);
+                    bar
+                }))
+                .unwrap()
+                .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], wait_type_color(stringify!($wait_type)).filled()))
+                .label(format!(
+                    "{:10} {:>8} {:>6.2}%",
+                    stringify!($wait_type),
+                    qc.iter().map(|d| d.$wait_type).sum::<usize>(),
+                    if qc_total_sum == 0 {
+                        0_f64
+                    } else {
+                        qc.iter().map(|d| d.$wait_type).sum::<usize>() as f64 / qc_total_sum as f64 * 100_f64
+                    },
+                ));
+
+            draw_bars_with_wait_types!($($other_types,)*);
+        }
+    }
+    draw_bars_with_wait_types!(
+        on_cpu, io, lock, lwlock, ipc, timeout, extension, client, buffer_pin, activity
+    );
 
     contextarea
         .configure_series_labels()
@@ -564,22 +321,63 @@ pub fn show_queries(
 
     multi_backend[backend_number].fill(&WHITE).unwrap();
 
+    let (_, y_size) = multi_backend[backend_number].dim_in_pixel();
+    let max_number_queries = (y_size / 21) - 1;
+    let mut others = QueryCollection {
+        query: "others".to_string(),
+        ..Default::default()
+    };
+    let mut others_counter = 0;
+
     let mut y_counter = 0;
     for query in qc.iter() {
+        if qc.len() as u32 <= max_number_queries
+            || (qc.len() as u32 > max_number_queries && (y_counter / 20) < max_number_queries)
+        {
+            multi_backend[backend_number]
+                .draw(&Text::new(
+                    format!(
+                        "{:>20}  {:6.2}% {:8} {}",
+                        query.query_id,
+                        query.total as f64 / grand_total_samples * 100_f64,
+                        query.total,
+                        if query.query_id == 0 {
+                            "*".to_string()
+                        } else {
+                            query.query.to_string()
+                        }
+                    ),
+                    (10, y_counter as i32),
+                    (MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE).into_font(),
+                ))
+                .unwrap();
+            y_counter += 20;
+        } else {
+            others_counter += 1;
+            others.on_cpu += query.on_cpu;
+            others.io += query.io;
+            others.ipc += query.ipc;
+            others.buffer_pin += query.buffer_pin;
+            others.extension += query.extension;
+            others.activity += query.activity;
+            others.timeout += query.timeout;
+            others.lwlock += query.lwlock;
+            others.client += query.client;
+            others.lock += query.lock;
+            others.total += query.total;
+        }
+    }
+    if others_counter > 0 {
         multi_backend[backend_number]
             .draw(&Text::new(
                 format!(
                     "{:>20}  {:6.2}% {:8} {}",
-                    query.query_id,
-                    query.total as f64 / grand_total_samples * 100_f64,
-                    query.total,
-                    if query.query_id == 0 {
-                        "*".to_string()
-                    } else {
-                        query.query.to_string()
-                    }
+                    "..others",
+                    others.total as f64 / grand_total_samples * 100_f64,
+                    others.total,
+                    "*"
                 ),
-                (10, y_counter),
+                (10, y_counter as i32),
                 (MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE).into_font(),
             ))
             .unwrap();
@@ -591,7 +389,7 @@ pub fn show_queries(
                 "{:>20}  {:6.2}% {:8} {}",
                 "total", 100_f64, grand_total_samples, ""
             ),
-            (10, y_counter),
+            (10, y_counter as i32),
             (MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE).into_font(),
         ))
         .unwrap();
