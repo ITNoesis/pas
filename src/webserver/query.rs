@@ -116,15 +116,48 @@ pub fn ash_by_query_id(
             timeout: d.timeout,
         });
     }
-    qc.sort_by(|b, a| b.total.cmp(&a.total));
+    qc.sort_by(|a, b| b.total.cmp(&a.total));
 
-    let qc_count = if qc.len() > 1 { qc.len() - 1 } else { qc.len() };
-    let qc_total_max = (qc.iter().map(|d| d.total).max().unwrap_or_default() * 110) / 100;
+    let mut qc_count = if qc.len() > 1 { qc.len() - 1 } else { qc.len() };
+    let mut qc_total_max = (qc.iter().map(|d| d.total).max().unwrap_or_default() * 110) / 100;
     let qc_total_sum: usize = qc.iter().map(|d| d.total).sum();
+    let (_, y_size) = multi_backend[backend_number].dim_in_pixel();
+    let qc_max_size = y_size as usize / 20;
+    let mut others_counter = 0;
+
+    if qc.len() > qc_max_size {
+        let mut others = QueryCollection {
+            ..Default::default()
+        };
+        for _q in &qc[qc_max_size..] {
+            others_counter += 1;
+            /*
+            * It turns out others can be a LOT, and therefore dominate the waits bar, so leave them
+            * out.
+                        others.total += q.total;
+                        others.on_cpu += q.on_cpu;
+                        others.activity += q.activity;
+                        others.buffer_pin += q.buffer_pin;
+                        others.client += q.client;
+                        others.extension += q.extension;
+                        others.io += q.io;
+                        others.ipc += q.ipc;
+                        others.lock += q.lock;
+                        others.lwlock += q.lwlock;
+                        others.timeout += q.timeout;
+            */
+        }
+        others.query = format!("..others ({})", others_counter);
+        others.query_id = -1;
+        qc.truncate(qc_max_size);
+        qc.push(others);
+        qc_count = qc.len() - 1;
+        qc_total_max = (qc.iter().map(|d| d.total).max().unwrap_or_default() * 110) / 100;
+    }
+
+    qc.reverse();
 
     multi_backend[backend_number].fill(&WHITE).unwrap();
-
-    let (_, y_size) = multi_backend[backend_number].dim_in_pixel();
     if y_size < 317 {
         multi_backend[backend_number]
             .draw(&Text::new(
@@ -153,19 +186,25 @@ pub fn ash_by_query_id(
         .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
         .y_labels(qc.len())
         .y_label_formatter(&|v| {
-            format!(
-                "{}",
-                qc.iter()
-                    .map(|r| r.query_id)
-                    .nth({
-                        if let SegmentValue::CenterOf(val) = v {
-                            *val
-                        } else {
-                            0
-                        }
-                    })
-                    .unwrap_or(0)
-            )
+            let query_id = qc
+                .iter()
+                .map(|r| r.query_id)
+                .nth({
+                    if let SegmentValue::CenterOf(val) = v {
+                        *val
+                    } else {
+                        0
+                    }
+                })
+                .unwrap_or(0);
+            match query_id {
+                -1 => qc
+                    .iter()
+                    .find(|r| r.query_id == query_id)
+                    .map(|r| r.query.clone())
+                    .unwrap(),
+                _ => query_id.to_string(),
+            }
         })
         .x_desc("Samples")
         .x_label_formatter(&|n| n.to_string())
@@ -372,7 +411,7 @@ pub fn show_queries(
             .draw(&Text::new(
                 format!(
                     "{:>20}  {:6.2}% {:8} {}",
-                    "..others",
+                    format!("..others ({})", others_counter),
                     others.total as f64 / grand_total_samples * 100_f64,
                     others.total,
                     "*"
