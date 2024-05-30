@@ -18,7 +18,7 @@ mod wal;
 mod xid_age;
 
 pub use io::{io_bandwidth, io_times};
-pub use query::{ash_by_query_id, show_queries};
+pub use query::{ash_by_query_id, show_queries, show_queries_html};
 pub use wait_events::{
     wait_event_type_plot, wait_type_activity, wait_type_bufferpin, wait_type_client,
     wait_type_extension, wait_type_io, wait_type_ipc, wait_type_lock, wait_type_lwlock,
@@ -46,6 +46,7 @@ pub fn wait_type_color(wait_event_type: &str) -> RGBColor {
 pub async fn webserver_main() -> Result<()> {
     let app = Router::new()
         .route("/handler/:plot_1", get(handler_html))
+        .route("/dual_handler/:plot_1/:out_1", get(dual_handler_html))
         .route("/plotter/:plot_1", get(handler_plotter))
         .route("/", get(root_handler));
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", ARGS.webserver_port))
@@ -106,6 +107,7 @@ pub async fn root_handler() -> Html<String> {
      <li><a href="/handler/io_bandwidth" target="right">IO bandwidth</a></li>
      <li><a href="/handler/sh_qid" target="right">ASH-QueryID time</a></li>
      <li><a href="/handler/sh_qid_q" target="right">ASH-QueryID-Q</a></li>
+     <li><a href="/dual_handler/sh_qid/all_queries" target="right">ASH-QueryID-Q-HTML</a></li>
      <li><a href="/handler/xid_age" target="right">XID Age</a></li>
     </nav>
    </div>
@@ -122,6 +124,16 @@ pub async fn root_handler() -> Html<String> {
 
 pub async fn handler_html(Path(plot_1): Path<String>) -> Html<String> {
     format!(r#"<img src="/plotter/{}">"#, plot_1).into()
+}
+pub async fn dual_handler_html(Path((plot_1, out_1)): Path<(String, String)>) -> Html<String> {
+    let output: String = format!(r#"<img src="/plotter/{}">"#, plot_1).into();
+    //let mut output: String = format!(r#"<img src="/plotter/{}">"#, plot_1);
+    let html = match out_1.as_str() {
+        "all_queries" => show_queries_html(),
+        &_ => todo!(),
+    };
+    format!("{}{}", output, html).into()
+    //output.into()
 }
 
 pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
@@ -148,6 +160,7 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
         "io_bandwidth" => create_wait_event_type_and_io_bandwidth_plot(&mut buffer),
         "sh_qid" => create_wait_event_type_and_queryid_time(&mut buffer),
         "sh_qid_q" => create_wait_event_type_and_queryid_and_query(&mut buffer),
+        "sh_qid_html" => create_wait_event_type_and_queryid_and_query_html(&mut buffer),
         "xid_age" => create_xid_age_plot(&mut buffer),
         &_ => todo!(),
     }
@@ -178,6 +191,13 @@ pub fn create_wait_event_type_and_queryid_and_query(buffer: &mut [u8]) {
     wait_event_type_plot(&mut multi_backend, 0);
     ash_by_query_id(&mut multi_backend, 1);
     show_queries(&mut multi_backend, 2);
+}
+pub fn create_wait_event_type_and_queryid_and_query_html(buffer: &mut [u8]) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((2, 1));
+    wait_event_type_plot(&mut multi_backend, 0);
+    ash_by_query_id(&mut multi_backend, 1);
 }
 pub fn create_wait_event_type_and_queryid_time(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
