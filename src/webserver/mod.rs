@@ -9,7 +9,7 @@ use std::io::Cursor;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::{ARGS, DATA};
+use crate::{webserver::query::waits_by_query_id, ARGS, DATA};
 
 mod io;
 mod query;
@@ -20,9 +20,9 @@ mod xid_age;
 pub use io::{io_bandwidth, io_times};
 pub use query::{ash_by_query_id, show_queries, show_queries_html};
 pub use wait_events::{
-    wait_event_type_plot, wait_type_activity, wait_type_bufferpin, wait_type_client,
-    wait_type_extension, wait_type_io, wait_type_ipc, wait_type_lock, wait_type_lwlock,
-    wait_type_timeout,
+    wait_event_plot, wait_event_type_plot, wait_type_activity, wait_type_bufferpin,
+    wait_type_client, wait_type_extension, wait_type_io, wait_type_ipc, wait_type_lock,
+    wait_type_lwlock, wait_type_timeout,
 };
 pub use wal::{wal_io_times, wal_size};
 pub use xid_age::xid_age;
@@ -106,7 +106,9 @@ pub async fn root_handler() -> Html<String> {
      <li><a href="/handler/io_latency" target="right">IO latency</a></li>
      <li><a href="/handler/io_bandwidth" target="right">IO bandwidth</a></li>
      <li><a href="/handler/sh_qid" target="right">ASH-QueryID time</a></li>
+     <li><a href="/handler/sh_test" target="right">test</a></li>
      <li><a href="/handler/sh_qid_q" target="right">ASH-QueryID-Q</a></li>
+     <li><a href="/handler/we_qid_q" target="right">waits QueryID-Q</a></li>
      <li><a href="/dual_handler/sh_qid/all_queries" target="right">ASH-QueryID-Q-HTML</a></li>
      <li><a href="/handler/xid_age" target="right">XID Age</a></li>
     </nav>
@@ -126,7 +128,7 @@ pub async fn handler_html(Path(plot_1): Path<String>) -> Html<String> {
     format!(r#"<img src="/plotter/{}">"#, plot_1).into()
 }
 pub async fn dual_handler_html(Path((plot_1, out_1)): Path<(String, String)>) -> Html<String> {
-    let output: String = format!(r#"<img src="/plotter/{}">"#, plot_1).into();
+    let output: String = format!(r#"<img src="/plotter/{}">"#, plot_1);
     //let mut output: String = format!(r#"<img src="/plotter/{}">"#, plot_1);
     let html = match out_1.as_str() {
         "all_queries" => show_queries_html(),
@@ -160,8 +162,10 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
         "io_bandwidth" => create_wait_event_type_and_io_bandwidth_plot(&mut buffer),
         "sh_qid" => create_wait_event_type_and_queryid_time(&mut buffer),
         "sh_qid_q" => create_wait_event_type_and_queryid_and_query(&mut buffer),
+        "we_qid_q" => create_wait_events_and_queryid_and_query(&mut buffer),
         "sh_qid_html" => create_wait_event_type_and_queryid_and_query_html(&mut buffer),
         "xid_age" => create_xid_age_plot(&mut buffer),
+        "sh_test" => test(&mut buffer),
         &_ => todo!(),
     }
     let rgb_image = DynamicImage::ImageRgb8(
@@ -172,6 +176,12 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
     cursor.into_inner()
 }
 
+pub fn test(buffer: &mut [u8]) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((1, 1));
+    wait_event_plot(&mut multi_backend, 0);
+}
 pub fn create_wait_event_type_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
@@ -190,6 +200,14 @@ pub fn create_wait_event_type_and_queryid_and_query(buffer: &mut [u8]) {
     let mut multi_backend = backend.split_evenly((3, 1));
     wait_event_type_plot(&mut multi_backend, 0);
     ash_by_query_id(&mut multi_backend, 1);
+    show_queries(&mut multi_backend, 2);
+}
+pub fn create_wait_events_and_queryid_and_query(buffer: &mut [u8]) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((3, 1));
+    wait_event_type_plot(&mut multi_backend, 0);
+    waits_by_query_id(&mut multi_backend, 1);
     show_queries(&mut multi_backend, 2);
 }
 pub fn create_wait_event_type_and_queryid_and_query_html(buffer: &mut [u8]) {
