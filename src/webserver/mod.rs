@@ -19,11 +19,7 @@ mod xid_age;
 
 pub use io::{io_bandwidth, io_times};
 pub use query::{ash_by_query_id, show_queries, show_queries_html};
-pub use wait_events::{
-    wait_event_plot, wait_event_type_plot, wait_type_activity, wait_type_bufferpin,
-    wait_type_client, wait_type_extension, wait_type_io, wait_type_ipc, wait_type_lock,
-    wait_type_lwlock, wait_type_timeout,
-};
+pub use wait_events::{wait_event_plot, wait_event_type_plot};
 pub use wal::{wal_io_times, wal_size};
 pub use xid_age::xid_age;
 
@@ -38,8 +34,11 @@ pub fn wait_type_color(wait_event_type: &str) -> RGBColor {
         "lwlock" => RED_900,
         "lock" => RED,
         "io" => BLUE_600,
-        "on_cpu" => GREEN,
-        &_ => todo!(),
+        "on_cpu" | "~on_cpu" => GREEN,
+        other => {
+            println!("unknown wait event type: {:?}", other);
+            todo!()
+        }
     }
 }
 
@@ -69,8 +68,6 @@ pub async fn root_handler() -> Html<String> {
         }
     }
 
-    //    .container {{ }}
-
     r##"<!doctype html>
  <html>
    <head>
@@ -91,25 +88,17 @@ pub async fn root_handler() -> Html<String> {
    <div class = "column_left">
     <nav>
      <li><a href="/" target="right">Home</a></li>
-     <li><a href="/handler/sh" target="right">ASH</a></li>
-     <li><a href="/handler/sh_activity" target="right">ASH-activity</a></li>
-     <li><a href="/handler/sh_bufferpin" target="right">ASH-bufferpin</a></li>
-     <li><a href="/handler/sh_client" target="right">ASH-client</a></li>
-     <li><a href="/handler/sh_extension" target="right">ASH-extension</a></li>
-     <li><a href="/handler/sh_io" target="right">ASH-io</a></li>
-     <li><a href="/handler/sh_ipc" target="right">ASH-ipc</a></li>
-     <li><a href="/handler/sh_lock" target="right">ASH-lock</a></li>
-     <li><a href="/handler/sh_lwlock" target="right">ASH-lwlock</a></li>
-     <li><a href="/handler/sh_timeout" target="right">ASH-timeout</a></li>
+     <li><a href="/handler/ash_wait_type" target="right">ASH by wait type</a></li>
+     <li><a href="/handler/ash_wait_event" target="right">ASH by wait event</a></li>
+     <li><a href="/dual_handler/ash_wait_query/all_queries" target="right">ASH and Queries</a></li>
      <li><a href="/handler/wal_io_times" target="right">WAL latency</a></li>
      <li><a href="/handler/wal_size" target="right">WAL size</a></li>
      <li><a href="/handler/io_latency" target="right">IO latency</a></li>
      <li><a href="/handler/io_bandwidth" target="right">IO bandwidth</a></li>
+     <li><a href="/dual_handler/sh_qid/all_queries" target="right">ASH-QueryID-Q-HTML</a></li>
      <li><a href="/handler/sh_qid" target="right">ASH-QueryID time</a></li>
-     <li><a href="/handler/sh_test" target="right">test</a></li>
      <li><a href="/handler/sh_qid_q" target="right">ASH-QueryID-Q</a></li>
      <li><a href="/handler/we_qid_q" target="right">waits QueryID-Q</a></li>
-     <li><a href="/dual_handler/sh_qid/all_queries" target="right">ASH-QueryID-Q-HTML</a></li>
      <li><a href="/handler/xid_age" target="right">XID Age</a></li>
     </nav>
    </div>
@@ -129,13 +118,11 @@ pub async fn handler_html(Path(plot_1): Path<String>) -> Html<String> {
 }
 pub async fn dual_handler_html(Path((plot_1, out_1)): Path<(String, String)>) -> Html<String> {
     let output: String = format!(r#"<img src="/plotter/{}">"#, plot_1);
-    //let mut output: String = format!(r#"<img src="/plotter/{}">"#, plot_1);
     let html = match out_1.as_str() {
         "all_queries" => show_queries_html(),
         &_ => todo!(),
     };
     format!("{}{}", output, html).into()
-    //output.into()
 }
 
 pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
@@ -146,16 +133,9 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
             .unwrap()
     ];
     match plot_1.as_str() {
-        "sh" => create_wait_event_type_plot(&mut buffer),
-        "sh_activity" => create_wait_event_type_and_activity_plot(&mut buffer),
-        "sh_bufferpin" => create_wait_event_type_and_bufferpin_plot(&mut buffer),
-        "sh_client" => create_wait_event_type_and_client_plot(&mut buffer),
-        "sh_extension" => create_wait_event_type_and_extension_plot(&mut buffer),
-        "sh_io" => create_wait_event_type_and_io_plot(&mut buffer),
-        "sh_ipc" => create_wait_event_type_and_ipc_plot(&mut buffer),
-        "sh_lock" => create_wait_event_type_and_lock_plot(&mut buffer),
-        "sh_lwlock" => create_wait_event_type_and_lwlock_plot(&mut buffer),
-        "sh_timeout" => create_wait_event_type_and_timeout_plot(&mut buffer),
+        "ash_wait_type" => create_ash_wait_type_plot(&mut buffer),
+        "ash_wait_event" => create_ash_wait_event_plot(&mut buffer),
+        "ash_wait_query" => create_ash_wait_event_and_queryid_overview(&mut buffer),
         "wal_io_times" => create_wait_event_type_and_wal_io_plot(&mut buffer),
         "wal_size" => create_wait_event_type_and_wal_size_plot(&mut buffer),
         "io_latency" => create_wait_event_type_and_io_latency_plot(&mut buffer),
@@ -163,10 +143,12 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
         "sh_qid" => create_wait_event_type_and_queryid_time(&mut buffer),
         "sh_qid_q" => create_wait_event_type_and_queryid_and_query(&mut buffer),
         "we_qid_q" => create_wait_events_and_queryid_and_query(&mut buffer),
-        "sh_qid_html" => create_wait_event_type_and_queryid_and_query_html(&mut buffer),
+        "sh_qid_html" => create_wait_event_and_queryid_and_query_html(&mut buffer),
         "xid_age" => create_xid_age_plot(&mut buffer),
-        "sh_test" => test(&mut buffer),
-        &_ => todo!(),
+        unknown => {
+            println!("handler plotter: unknown request: {}", unknown);
+            todo!()
+        }
     }
     let rgb_image = DynamicImage::ImageRgb8(
         image::RgbImage::from_raw(ARGS.graph_width, ARGS.graph_height, buffer).unwrap(),
@@ -176,17 +158,24 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
     cursor.into_inner()
 }
 
-pub fn test(buffer: &mut [u8]) {
+pub fn create_ash_wait_type_plot(buffer: &mut [u8]) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((1, 1));
+    wait_event_type_plot(&mut multi_backend, 0);
+}
+pub fn create_ash_wait_event_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((1, 1));
     wait_event_plot(&mut multi_backend, 0);
 }
-pub fn create_wait_event_type_plot(buffer: &mut [u8]) {
+pub fn create_ash_wait_event_and_queryid_overview(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
-    let mut multi_backend = backend.split_evenly((1, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
+    let mut multi_backend = backend.split_evenly((2, 1));
+    wait_event_plot(&mut multi_backend, 0);
+    waits_by_query_id(&mut multi_backend, 1);
 }
 pub fn create_xid_age_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
@@ -210,11 +199,11 @@ pub fn create_wait_events_and_queryid_and_query(buffer: &mut [u8]) {
     waits_by_query_id(&mut multi_backend, 1);
     show_queries(&mut multi_backend, 2);
 }
-pub fn create_wait_event_type_and_queryid_and_query_html(buffer: &mut [u8]) {
+pub fn create_wait_event_and_queryid_and_query_html(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
+    wait_event_plot(&mut multi_backend, 0);
     ash_by_query_id(&mut multi_backend, 1);
 }
 pub fn create_wait_event_type_and_queryid_time(buffer: &mut [u8]) {
@@ -251,67 +240,4 @@ pub fn create_wait_event_type_and_wal_size_plot(buffer: &mut [u8]) {
     let mut multi_backend = backend.split_evenly((2, 1));
     wait_event_type_plot(&mut multi_backend, 0);
     wal_size(&mut multi_backend, 1);
-}
-pub fn create_wait_event_type_and_activity_plot(buffer: &mut [u8]) {
-    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
-        .into_drawing_area();
-    let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
-    wait_type_activity(&mut multi_backend, 1);
-}
-pub fn create_wait_event_type_and_bufferpin_plot(buffer: &mut [u8]) {
-    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
-        .into_drawing_area();
-    let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
-    wait_type_bufferpin(&mut multi_backend, 1);
-}
-pub fn create_wait_event_type_and_client_plot(buffer: &mut [u8]) {
-    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
-        .into_drawing_area();
-    let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
-    wait_type_client(&mut multi_backend, 1);
-}
-pub fn create_wait_event_type_and_extension_plot(buffer: &mut [u8]) {
-    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
-        .into_drawing_area();
-    let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
-    wait_type_extension(&mut multi_backend, 1);
-}
-pub fn create_wait_event_type_and_io_plot(buffer: &mut [u8]) {
-    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
-        .into_drawing_area();
-    let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
-    wait_type_io(&mut multi_backend, 1);
-}
-pub fn create_wait_event_type_and_ipc_plot(buffer: &mut [u8]) {
-    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
-        .into_drawing_area();
-    let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
-    wait_type_ipc(&mut multi_backend, 1);
-}
-pub fn create_wait_event_type_and_lock_plot(buffer: &mut [u8]) {
-    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
-        .into_drawing_area();
-    let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
-    wait_type_lock(&mut multi_backend, 1);
-}
-pub fn create_wait_event_type_and_lwlock_plot(buffer: &mut [u8]) {
-    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
-        .into_drawing_area();
-    let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
-    wait_type_lwlock(&mut multi_backend, 1);
-}
-pub fn create_wait_event_type_and_timeout_plot(buffer: &mut [u8]) {
-    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
-        .into_drawing_area();
-    let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
-    wait_type_timeout(&mut multi_backend, 1);
 }

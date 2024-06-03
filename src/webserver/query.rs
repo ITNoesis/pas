@@ -725,8 +725,9 @@ pub fn show_queries(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
 ) {
-    let mut samples_per_queryid: HashMap<i64, QueryIdAndWaitTypes> = HashMap::new();
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    let mut samples_per_queryid: HashMap<i64, QueryIdAndWaitTypes> =
+        HashMap::with_capacity(pg_stat_activity.len());
     for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
         for r in per_sample_vector.iter() {
             if r.state.as_ref().unwrap_or(&"".to_string()) == "active" {
@@ -872,11 +873,10 @@ pub fn show_queries(
         .unwrap();
 }
 
-pub fn show_queries_html(//multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
-    //backend_number: usize,
-) -> String {
-    let mut samples_per_queryid: HashMap<i64, QueryIdAndWaitTypes> = HashMap::new();
+pub fn show_queries_html() -> String {
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    let mut samples_per_queryid: HashMap<i64, QueryIdAndWaitTypes> =
+        HashMap::with_capacity(pg_stat_activity.len());
     for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
         for r in per_sample_vector.iter() {
             if r.state.as_ref().unwrap_or(&"".to_string()) == "active" {
@@ -1039,9 +1039,10 @@ pub fn waits_by_query_id(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
 ) {
-    let mut queryid_waits: HashMap<i64, BTreeMap<String, usize>> = HashMap::new();
-    let mut wait_event_counter: BTreeMap<String, usize> = BTreeMap::new();
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    let mut wait_event_counter: BTreeMap<String, usize> = BTreeMap::new();
+    let mut queryid_waits: HashMap<i64, BTreeMap<String, usize>> =
+        HashMap::with_capacity(pg_stat_activity.len());
     for (_, per_sample_vector) in pg_stat_activity.iter() {
         for row in per_sample_vector.iter() {
             if row.state.as_deref().unwrap_or_default() == "active" {
@@ -1098,15 +1099,18 @@ pub fn waits_by_query_id(
     struct DynamicQueryIdTotalWaits {
         queryid: i64,
         total: usize,
+        others: bool,
         waits: BTreeMap<String, usize>,
     }
 
-    let mut queryid_total_waits: Vec<DynamicQueryIdTotalWaits> = Vec::new();
+    let mut queryid_total_waits: Vec<DynamicQueryIdTotalWaits> =
+        Vec::with_capacity(queryid_waits.len());
 
     for (queryid, waits) in queryid_waits.iter() {
         queryid_total_waits.push(DynamicQueryIdTotalWaits {
             queryid: *queryid,
             waits: waits.clone(),
+            others: false,
             total: {
                 waits
                     .iter()
@@ -1117,13 +1121,30 @@ pub fn waits_by_query_id(
             },
         })
     }
-    let queryid_total_waits_count = if queryid_total_waits.len() > 1 {
+    //queryid_total_waits.sort_by_key(|k| k.total);
+    queryid_total_waits.sort_by(|a, b| b.total.cmp(&a.total));
+
+    let mut queryid_total_waits_count = if queryid_total_waits.len() > 1 {
         queryid_total_waits.len() - 1
     } else {
         queryid_total_waits.len()
     };
 
-    queryid_total_waits.sort_by_key(|k| k.total);
+    let (_, y_size) = multi_backend[backend_number].dim_in_pixel();
+    let qtw_max = y_size as usize / 20;
+
+    if queryid_total_waits.len() > qtw_max {
+        let mut others = DynamicQueryIdTotalWaits {
+            ..Default::default()
+        };
+        others.total = queryid_total_waits.len() - qtw_max;
+        others.others = true;
+        queryid_total_waits.truncate(qtw_max);
+        queryid_total_waits.push(others);
+        queryid_total_waits_count = queryid_total_waits.len() - 1;
+    }
+
+    queryid_total_waits.reverse();
 
     // build the graph
     multi_backend[backend_number].fill(&WHITE).unwrap();
@@ -1155,15 +1176,34 @@ pub fn waits_by_query_id(
                     }
                 })
                 .unwrap_or(0);
-            match query_id {
-                /*
-                            -1 => queryid_total_waits
-                                .iter()
-                                .find(|r| r.queryid == *query_id)
-                                .map(|r| r.query.clone())
-                                .unwrap(),
-                */
-                _ => query_id.to_string(),
+            let is_others = &queryid_total_waits
+                .iter()
+                .map(|r| r.others)
+                .nth({
+                    if let SegmentValue::CenterOf(val) = v {
+                        *val
+                    } else {
+                        0
+                    }
+                })
+                .unwrap_or_default();
+            if *is_others {
+                format!(
+                    "..others: ({})",
+                    &queryid_total_waits
+                        .iter()
+                        .map(|r| r.total)
+                        .nth({
+                            if let SegmentValue::CenterOf(val) = v {
+                                *val
+                            } else {
+                                0
+                            }
+                        })
+                        .unwrap_or_default()
+                )
+            } else {
+                query_id.to_string()
             }
         })
         .x_desc("Samples")
@@ -1174,22 +1214,29 @@ pub fn waits_by_query_id(
     for (color_number, wait_event) in wait_event_counter.keys().enumerate() {
         contextarea
             .draw_series((0..).zip(queryid_total_waits.iter()).map(|(y, x)| {
-                let mut bar = Rectangle::new(
-                    [
-                        (0, SegmentValue::Exact(y)),
-                        (
-                            x.waits
-                                .range::<str, _>((
-                                    Included(wait_event.as_str()),
-                                    Included(last_key.as_str()),
-                                ))
-                                .map(|(_, v)| *v as isize)
-                                .sum::<isize>() as usize,
-                            SegmentValue::Exact(y + 1),
-                        ),
-                    ],
-                    Palette99::pick(color_number).filled(),
-                );
+                let mut bar = if x.others {
+                    Rectangle::new(
+                        [(0, SegmentValue::Exact(y)), (0, SegmentValue::Exact(y + 1))],
+                        Palette99::pick(color_number).filled(),
+                    )
+                } else {
+                    Rectangle::new(
+                        [
+                            (0, SegmentValue::Exact(y)),
+                            (
+                                x.waits
+                                    .range::<str, _>((
+                                        Included(wait_event.as_str()),
+                                        Included(last_key.as_str()),
+                                    ))
+                                    .map(|(_, v)| *v as isize)
+                                    .sum::<isize>() as usize,
+                                SegmentValue::Exact(y + 1),
+                            ),
+                        ],
+                        Palette99::pick(color_number).filled(),
+                    )
+                };
                 bar.set_margin(2, 2, 0, 0);
                 bar
             }))
