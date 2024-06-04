@@ -1092,18 +1092,7 @@ pub fn waits_by_query_id(
         .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
         .y_labels(queryid_total_waits_count)
         .y_label_formatter(&|v| {
-            let query_id = &queryid_total_waits
-                .iter()
-                .map(|r| r.queryid)
-                .nth({
-                    if let SegmentValue::CenterOf(val) = v {
-                        *val
-                    } else {
-                        0
-                    }
-                })
-                .unwrap_or(0);
-            let is_others = &queryid_total_waits
+            if queryid_total_waits
                 .iter()
                 .map(|r| r.others)
                 .nth({
@@ -1113,8 +1102,8 @@ pub fn waits_by_query_id(
                         0
                     }
                 })
-                .unwrap_or_default();
-            if *is_others {
+                .unwrap_or_default()
+            {
                 format!(
                     "..others: ({})",
                     &queryid_total_waits
@@ -1130,7 +1119,18 @@ pub fn waits_by_query_id(
                         .unwrap_or_default()
                 )
             } else {
-                query_id.to_string()
+                queryid_total_waits
+                    .iter()
+                    .map(|r| r.queryid)
+                    .nth({
+                        if let SegmentValue::CenterOf(val) = v {
+                            *val
+                        } else {
+                            0
+                        }
+                    })
+                    .unwrap_or(0)
+                    .to_string()
             }
         })
         .x_desc("Samples")
