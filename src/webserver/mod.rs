@@ -100,6 +100,7 @@ pub async fn root_handler() -> Html<String> {
      <li><a href="/handler/sh_qid_q" target="right">ASH-QueryID-Q</a></li>
      <li><a href="/handler/we_qid_q" target="right">waits QueryID-Q</a></li>
      <li><a href="/handler/xid_age" target="right">XID Age</a></li>
+     <li><a href="/handler/t" target="right">test</a></li>
     </nav>
    </div>
    <div class = "column_right">
@@ -145,6 +146,7 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
         "we_qid_q" => create_wait_events_and_queryid_and_query(&mut buffer),
         "sh_qid_html" => create_wait_event_and_queryid_and_query_html(&mut buffer),
         "xid_age" => create_xid_age_plot(&mut buffer),
+        "t" => create_awp(&mut buffer),
         unknown => {
             println!("handler plotter: unknown request: {}", unknown);
             todo!()
@@ -158,6 +160,12 @@ pub async fn handler_plotter(Path(plot_1): Path<String>) -> impl IntoResponse {
     cursor.into_inner()
 }
 
+pub fn create_awp(buffer: &mut [u8]) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((1, 1));
+    wait_event_plot(&mut multi_backend, 0, &true, &-7810315603562552972_i64);
+}
 pub fn create_ash_wait_type_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
@@ -168,13 +176,13 @@ pub fn create_ash_wait_event_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((1, 1));
-    wait_event_plot(&mut multi_backend, 0);
+    wait_event_plot(&mut multi_backend, 0, &false, &0_i64);
 }
 pub fn create_ash_wait_event_and_queryid_overview(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_plot(&mut multi_backend, 0);
+    wait_event_plot(&mut multi_backend, 0, &false, &0_i64);
     waits_by_query_id(&mut multi_backend, 1);
 }
 pub fn create_xid_age_plot(buffer: &mut [u8]) {
@@ -203,7 +211,7 @@ pub fn create_wait_event_and_queryid_and_query_html(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_plot(&mut multi_backend, 0);
+    wait_event_plot(&mut multi_backend, 0, &false, &0_i64);
     ash_by_query_id(&mut multi_backend, 1);
 }
 pub fn create_wait_event_type_and_queryid_time(buffer: &mut [u8]) {

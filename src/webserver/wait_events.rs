@@ -127,7 +127,6 @@ pub fn wait_event_type_plot(
         .clone();
     let total_samples = wait_event_counter.values().sum::<usize>();
     for wait_event in wait_event_counter.keys() {
-        //println!("last key: {}, current wait: {}", last_key, wait_event,);
         contextarea
             .draw_series(AreaSeries::new(
                 timestamp_and_waits.iter().map(|v| {
@@ -176,6 +175,8 @@ pub fn wait_event_type_plot(
 pub fn wait_event_plot(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
+    queryid_filter: &bool,
+    queryid: &i64,
 ) {
     #[derive(Debug, Default)]
     struct DynamicDateAndWaits {
@@ -193,7 +194,9 @@ pub fn wait_event_plot(
         };
         let mut current_waits_data: BTreeMap<String, usize> = BTreeMap::new();
         let mut current_max_active = 0;
-        for row in per_sample_vector.iter() {
+        for row in per_sample_vector.iter().filter(|r| {
+            *queryid_filter && r.query_id.as_ref().unwrap_or(&0) == queryid || !*queryid_filter
+        }) {
             if row.state.as_deref().unwrap_or_default() == "active" {
                 current_max_active += 1;
                 let wait_event = if format!(

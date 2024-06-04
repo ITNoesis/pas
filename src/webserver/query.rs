@@ -874,87 +874,45 @@ pub fn show_queries(
 }
 
 pub fn show_queries_html() -> String {
+    #[derive(Debug)]
+    struct QueryAndTotal {
+        query: String,
+        total: usize,
+    }
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
-    let mut samples_per_queryid: HashMap<i64, QueryIdAndWaitTypes> =
+    let mut samples_per_queryid: HashMap<i64, QueryAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
     for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
         for r in per_sample_vector.iter() {
-            if r.state.as_ref().unwrap_or(&"".to_string()) == "active" {
+            if r.state.as_deref().unwrap_or_default() == "active" {
                 samples_per_queryid
                     .entry(r.query_id.unwrap_or_default())
-                    .or_insert(QueryIdAndWaitTypes {
-                        query: r.query.as_ref().unwrap_or(&"".to_string()).clone(),
-                        ..Default::default()
+                    .and_modify(|r| r.total += 1)
+                    .or_insert(QueryAndTotal {
+                        query: r.query.as_deref().unwrap_or_default().to_string(),
+                        total: 1,
                     });
-                match r.wait_event_type.as_deref().unwrap_or_default() {
-                    "activity" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.activity += 1),
-                    "bufferpin" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.buffer_pin += 1),
-                    "client" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.client += 1),
-                    "extension" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.extension += 1),
-                    "io" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.io += 1),
-                    "ipc" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.ipc += 1),
-                    "lock" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.lock += 1),
-                    "lwlock" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.lwlock += 1),
-                    "timeout" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.timeout += 1),
-                    &_ => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.on_cpu += 1),
-                };
-                samples_per_queryid
-                    .entry(r.query_id.unwrap_or_default())
-                    .and_modify(|r| r.total += 1);
             }
         }
     }
 
-    let mut qc: Vec<QueryCollection> = Vec::new();
-    for (q, d) in samples_per_queryid {
-        qc.push(QueryCollection {
-            query_id: q,
-            query: d.query,
-            total: d.total,
-            on_cpu: d.on_cpu,
-            activity: d.activity,
-            buffer_pin: d.buffer_pin,
-            client: d.client,
-            extension: d.extension,
-            io: d.io,
-            ipc: d.ipc,
-            lock: d.lock,
-            lwlock: d.lwlock,
-            timeout: d.timeout,
+    #[derive(Debug)]
+    struct QueryIdQueryTotal {
+        query_id: i64,
+        query: String,
+        total: usize,
+    }
+    let mut qc: Vec<QueryIdQueryTotal> = Vec::new();
+    for (query_id, vector) in samples_per_queryid {
+        qc.push(QueryIdQueryTotal {
+            query_id,
+            query: vector.query,
+            total: vector.total,
         });
     }
     qc.sort_by(|a, b| b.total.cmp(&a.total));
     let grand_total_samples: f64 = qc.iter().map(|r| r.total as f64).sum();
 
-    //multi_backend[backend_number].fill(&WHITE).unwrap();
-
-    //let (_, y_size) = multi_backend[backend_number].dim_in_pixel();
-    //let max_number_queries = (y_size / 21) - 1;
-    //let mut others = QueryCollection {
-    //    query: "others".to_string(),
-    //    ..Default::default()
-    //};
-    //let mut others_counter = 0;
     let mut html_output = String::from(
         r#"<table border=1>
             <colgroup>
@@ -970,8 +928,6 @@ pub fn show_queries_html() -> String {
                 <th>Query</th>
             </tr>"#,
     );
-
-    //let mut y_counter = 0;
 
     for query in qc.iter() {
         html_output += format!(
@@ -1004,35 +960,6 @@ pub fn show_queries_html() -> String {
     .as_str();
 
     html_output += "</table>";
-    /*
-        if others_counter > 0 {
-            multi_backend[backend_number]
-                .draw(&Text::new(
-                    format!(
-                        "{:>20}  {:6.2}% {:8} {}",
-                        format!("..others ({})", others_counter),
-                        others.total as f64 / grand_total_samples * 100_f64,
-                        others.total,
-                        "*"
-                    ),
-                    (10, y_counter as i32),
-                    (MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE).into_font(),
-                ))
-                .unwrap();
-            y_counter += 20;
-        }
-        multi_backend[backend_number]
-            .draw(&Text::new(
-                format!(
-                    "{:>20}  {:6.2}% {:8} {}",
-                    "total", 100_f64, grand_total_samples, ""
-                ),
-                (10, y_counter as i32),
-                (MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE).into_font(),
-            ))
-            .unwrap();
-    */
-    //html_output.into()
     html_output
 }
 pub fn waits_by_query_id(
@@ -1163,7 +1090,7 @@ pub fn waits_by_query_id(
     contextarea
         .configure_mesh()
         .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
-        .y_labels(queryid_total_waits.len())
+        .y_labels(queryid_total_waits_count)
         .y_label_formatter(&|v| {
             let query_id = &queryid_total_waits
                 .iter()
@@ -1215,6 +1142,9 @@ pub fn waits_by_query_id(
         contextarea
             .draw_series((0..).zip(queryid_total_waits.iter()).map(|(y, x)| {
                 let mut bar = if x.others {
+                    // others has the tendency to gather a lot of events, potentially making it
+                    // far bigger than a single queryid, even for the highest single querid.
+                    // therefore it's shown with no bar graph.
                     Rectangle::new(
                         [(0, SegmentValue::Exact(y)), (0, SegmentValue::Exact(y + 1))],
                         Palette99::pick(color_number).filled(),
