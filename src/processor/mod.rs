@@ -1,7 +1,7 @@
 use crate::{
     processor::{
         pg_database::PgDatabase, pg_settings::PgSettings, pg_stat_bgwriter::PgStatBgWriter,
-        pg_stat_database::PgStatDatabase, pg_stat_wal::PgStatWal, wait_events::WaitEvents,
+        pg_stat_database::PgStatDatabase, pg_stat_wal::PgStatWal,
     },
     ARGS,
 };
@@ -22,7 +22,7 @@ pub mod pg_stat_activity;
 pub mod pg_stat_bgwriter;
 pub mod pg_stat_database;
 pub mod pg_stat_wal;
-pub mod wait_events;
+//pub mod wait_events;
 
 pub use deltatable::{DeltaTable, StatisticsDelta};
 pub use pg_database::PgDatabaseXidLimits;
@@ -30,10 +30,10 @@ pub use pg_stat_activity::PgStatActivity;
 pub use pg_stat_bgwriter::PgStatBgWriterSum;
 pub use pg_stat_database::PgStatDatabaseSum;
 pub use pg_stat_wal::PgStatWalSum;
-pub use wait_events::{
-    PgWaitTypeActivity, PgWaitTypeBufferPin, PgWaitTypeClient, PgWaitTypeExtension, PgWaitTypeIO,
-    PgWaitTypeIPC, PgWaitTypeLWLock, PgWaitTypeLock, PgWaitTypeTimeout, PgWaitTypes,
-};
+//pub use wait_events::{
+//   PgWaitTypeActivity, PgWaitTypeBufferPin, PgWaitTypeClient, PgWaitTypeExtension, PgWaitTypeIO,
+//  PgWaitTypeIPC, PgWaitTypeLWLock, PgWaitTypeLock, PgWaitTypeTimeout, PgWaitTypes,
+//};
 
 type DeltaHashTable = RwLock<HashMap<String, StatisticsDelta>>;
 static DELTATABLE: Lazy<DeltaHashTable> = Lazy::new(|| RwLock::new(HashMap::new()));
@@ -59,7 +59,7 @@ pub async fn processor_main() -> Result<()> {
         interval.tick().await;
 
         PgStatActivity::fetch_and_add_to_data(&pool).await;
-        WaitEvents::process_waits_and_add_to_data().await;
+        //WaitEvents::process_waits_and_add_to_data().await;
         PgStatDatabase::fetch_and_add_to_data(&pool).await;
         PgStatBgWriter::fetch_and_add_to_data(&pool).await;
         PgStatWal::fetch_and_add_to_data(&pool).await;

@@ -1,4 +1,3 @@
-use crate::webserver::wait_type_color;
 use crate::DATA;
 use crate::{
     CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE, LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE,
@@ -12,6 +11,7 @@ use plotters::prelude::*;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Bound::Included;
 
+/*
 #[derive(Debug, Default)]
 pub struct QueryIdAndWaitTypes {
     pub query: String,
@@ -721,77 +721,45 @@ pub fn ash_by_query_id(
         .draw()
         .unwrap();
 }
+*/
 pub fn show_queries(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
 ) {
+    #[derive(Debug)]
+    struct QueryAndTotal {
+        query: String,
+        total: usize,
+    }
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
-    let mut samples_per_queryid: HashMap<i64, QueryIdAndWaitTypes> =
+    let mut samples_per_queryid: HashMap<i64, QueryAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
     for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
         for r in per_sample_vector.iter() {
-            if r.state.as_ref().unwrap_or(&"".to_string()) == "active" {
+            if r.state.as_deref().unwrap_or_default() == "active" {
                 samples_per_queryid
                     .entry(r.query_id.unwrap_or_default())
-                    .or_insert(QueryIdAndWaitTypes {
-                        query: r.query.as_ref().unwrap_or(&"".to_string()).clone(),
-                        ..Default::default()
+                    .and_modify(|r| r.total += 1)
+                    .or_insert(QueryAndTotal {
+                        query: r.query.as_deref().unwrap_or_default().to_string(),
+                        total: 1,
                     });
-                match r.wait_event_type.as_deref().unwrap_or_default() {
-                    "activity" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.activity += 1),
-                    "bufferpin" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.buffer_pin += 1),
-                    "client" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.client += 1),
-                    "extension" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.extension += 1),
-                    "io" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.io += 1),
-                    "ipc" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.ipc += 1),
-                    "lock" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.lock += 1),
-                    "lwlock" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.lwlock += 1),
-                    "timeout" => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.timeout += 1),
-                    &_ => samples_per_queryid
-                        .entry(r.query_id.unwrap_or_default())
-                        .and_modify(|r| r.on_cpu += 1),
-                };
-                samples_per_queryid
-                    .entry(r.query_id.unwrap_or_default())
-                    .and_modify(|r| r.total += 1);
             }
         }
     }
 
-    let mut qc: Vec<QueryCollection> = Vec::new();
-    for (q, d) in samples_per_queryid {
-        qc.push(QueryCollection {
-            query_id: q,
-            query: d.query,
-            total: d.total,
-            on_cpu: d.on_cpu,
-            activity: d.activity,
-            buffer_pin: d.buffer_pin,
-            client: d.client,
-            extension: d.extension,
-            io: d.io,
-            ipc: d.ipc,
-            lock: d.lock,
-            lwlock: d.lwlock,
-            timeout: d.timeout,
+    #[derive(Debug, Default)]
+    struct QueryIdQueryTotal {
+        query_id: i64,
+        query: String,
+        total: usize,
+    }
+    let mut qc: Vec<QueryIdQueryTotal> = Vec::new();
+    for (query_id, vector) in samples_per_queryid {
+        qc.push(QueryIdQueryTotal {
+            query_id,
+            query: vector.query,
+            total: vector.total,
         });
     }
     qc.sort_by(|a, b| b.total.cmp(&a.total));
@@ -801,7 +769,7 @@ pub fn show_queries(
 
     let (_, y_size) = multi_backend[backend_number].dim_in_pixel();
     let max_number_queries = (y_size / 21) - 1;
-    let mut others = QueryCollection {
+    let mut others = QueryIdQueryTotal {
         query: "others".to_string(),
         ..Default::default()
     };
@@ -832,16 +800,6 @@ pub fn show_queries(
             y_counter += 20;
         } else {
             others_counter += 1;
-            others.on_cpu += query.on_cpu;
-            others.io += query.io;
-            others.ipc += query.ipc;
-            others.buffer_pin += query.buffer_pin;
-            others.extension += query.extension;
-            others.activity += query.activity;
-            others.timeout += query.timeout;
-            others.lwlock += query.lwlock;
-            others.client += query.client;
-            others.lock += query.lock;
             others.total += query.total;
         }
     }
@@ -873,7 +831,7 @@ pub fn show_queries(
         .unwrap();
 }
 
-pub fn show_queries_html() -> String {
+pub fn show_queries_html(queryid_filter: &bool, queryid: &i64) -> String {
     #[derive(Debug)]
     struct QueryAndTotal {
         query: String,
@@ -883,7 +841,10 @@ pub fn show_queries_html() -> String {
     let mut samples_per_queryid: HashMap<i64, QueryAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
     for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
-        for r in per_sample_vector.iter() {
+        for r in per_sample_vector
+            .iter()
+            .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
+        {
             if r.state.as_deref().unwrap_or_default() == "active" {
                 samples_per_queryid
                     .entry(r.query_id.unwrap_or_default())
@@ -931,12 +892,15 @@ pub fn show_queries_html() -> String {
 
     for query in qc.iter() {
         html_output += format!(
-            "<tr>
-                <td align=right>{:>20}</td>
+            r#"<tr>
+                <td align=right>
+                  <a href="/dual_handler/ash_wait_query_by_queryid/all_queries/{}">{:>20}</a>
+                </td>
                 <td align=right>{:6.2}%</td>
                 <td align=right>{:8}</td>
                 <td>{}</td>
-            </tr>",
+            </tr>"#,
+            query.query_id,
             query.query_id,
             query.total as f64 / grand_total_samples * 100_f64,
             query.total,
@@ -965,13 +929,18 @@ pub fn show_queries_html() -> String {
 pub fn waits_by_query_id(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
+    queryid_filter: &bool,
+    queryid: &i64,
 ) {
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
     let mut wait_event_counter: BTreeMap<String, usize> = BTreeMap::new();
     let mut queryid_waits: HashMap<i64, BTreeMap<String, usize>> =
         HashMap::with_capacity(pg_stat_activity.len());
     for (_, per_sample_vector) in pg_stat_activity.iter() {
-        for row in per_sample_vector.iter() {
+        for row in per_sample_vector
+            .iter()
+            .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
+        {
             if row.state.as_deref().unwrap_or_default() == "active" {
                 let wait_event = if format!(
                     "{}:{}",

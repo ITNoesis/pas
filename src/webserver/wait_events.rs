@@ -194,9 +194,11 @@ pub fn wait_event_plot(
         };
         let mut current_waits_data: BTreeMap<String, usize> = BTreeMap::new();
         let mut current_max_active = 0;
-        for row in per_sample_vector.iter().filter(|r| {
-            *queryid_filter && r.query_id.as_ref().unwrap_or(&0) == queryid || !*queryid_filter
-        }) {
+        // !*queryid_filter || (*queryid_filter && r.query_id.as_ref().unwrap_or(&0) == queryid)
+        for row in per_sample_vector
+            .iter()
+            .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
+        {
             if row.state.as_deref().unwrap_or_default() == "active" {
                 current_max_active += 1;
                 let wait_event = if format!(

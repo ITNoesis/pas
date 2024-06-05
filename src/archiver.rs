@@ -1,7 +1,15 @@
 use crate::processor::{
-    PgDatabaseXidLimits, PgStatActivity, PgStatBgWriterSum, PgStatDatabaseSum, PgStatWalSum,
-    PgWaitTypeActivity, PgWaitTypeBufferPin, PgWaitTypeClient, PgWaitTypeExtension, PgWaitTypeIO,
-    PgWaitTypeIPC, PgWaitTypeLWLock, PgWaitTypeLock, PgWaitTypeTimeout, PgWaitTypes,
+    PgDatabaseXidLimits,
+    PgStatActivity,
+    PgStatBgWriterSum,
+    PgStatDatabaseSum,
+    PgStatWalSum,
+    //PgWaitTypeActivity, PgWaitTypeBufferPin, PgWaitTypeClient, PgWaitTypeExtension, PgWaitTypeIO,
+    //PgWaitTypeIPC,
+    //PgWaitTypeLWLock,
+    //PgWaitTypeLock,
+    //PgWaitTypeTimeout,
+    //PgWaitTypes,
 };
 use crate::{DataTransit, ARGS, DATA};
 
@@ -60,16 +68,16 @@ pub async fn save_to_disk(high_time: DateTime<Local>) -> Result<()> {
         .collect::<Vec<(DateTime<Local>, Vec<PgStatActivity>)>>();
 
     generate_transition_collections!(
-        [wait_event_types, PgWaitTypes],
-        [wait_event_activity, PgWaitTypeActivity],
-        [wait_event_bufferpin, PgWaitTypeBufferPin],
-        [wait_event_client, PgWaitTypeClient],
-        [wait_event_extension, PgWaitTypeExtension],
-        [wait_event_io, PgWaitTypeIO],
-        [wait_event_ipc, PgWaitTypeIPC],
-        [wait_event_lock, PgWaitTypeLock],
-        [wait_event_lwlock, PgWaitTypeLWLock],
-        [wait_event_timeout, PgWaitTypeTimeout],
+        //[wait_event_types, PgWaitTypes],
+        //[wait_event_activity, PgWaitTypeActivity],
+        //[wait_event_bufferpin, PgWaitTypeBufferPin],
+        //[wait_event_client, PgWaitTypeClient],
+        //[wait_event_extension, PgWaitTypeExtension],
+        //[wait_event_io, PgWaitTypeIO],
+        //[wait_event_ipc, PgWaitTypeIPC],
+        //[wait_event_lock, PgWaitTypeLock],
+        //[wait_event_lwlock, PgWaitTypeLWLock],
+        //[wait_event_timeout, PgWaitTypeTimeout],
         [pg_stat_database_sum, PgStatDatabaseSum],
         [pg_stat_bgwriter_sum, PgStatBgWriterSum],
         [pg_stat_wal_sum, PgStatWalSum],
