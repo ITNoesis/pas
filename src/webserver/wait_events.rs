@@ -177,6 +177,8 @@ pub fn wait_event_plot(
     backend_number: usize,
     queryid_filter: &bool,
     queryid: &i64,
+    query_filter: &bool,
+    query: &str,
 ) {
     #[derive(Debug, Default)]
     struct DynamicDateAndWaits {
@@ -198,6 +200,7 @@ pub fn wait_event_plot(
         for row in per_sample_vector
             .iter()
             .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
+            .filter(|r| !*query_filter || r.query.as_deref().unwrap_or_default() == query)
         {
             if row.state.as_deref().unwrap_or_default() == "active" {
                 current_max_active += 1;

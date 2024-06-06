@@ -10,7 +10,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::{
-    webserver::query::{show_queries_queryid_html, waits_by_query_id},
+    webserver::query::{show_queries_query_html, show_queries_queryid_html, waits_by_query_id},
     ARGS, DATA,
 };
 
@@ -141,6 +141,7 @@ pub async fn dual_handler_html_queryid(
     let output: String = format!(r#"<img src="/plotter/{}/{}">"#, plot_1, queryid);
     let html = match out_1.as_str() {
         "all_queries" => show_queries_queryid_html(&queryid.parse::<i64>().unwrap()),
+        "selected_queries" => show_queries_query_html(&queryid),
         &_ => todo!(),
     };
     format!("{}{}", output, html).into()
@@ -166,7 +167,8 @@ pub async fn handler_plotter(Path((plot_1, queryid)): Path<(String, String)>) ->
         //"sh_qid_q" => create_wait_event_type_and_queryid_and_query(&mut buffer),
         "we_qid_q" => create_wait_events_and_queryid_and_query(&mut buffer),
         //"sh_qid_html" => create_wait_event_and_queryid_and_query_html(&mut buffer),
-        "ash_wait_query_by_queryid" => create_awp(&mut buffer, queryid),
+        "ash_wait_query_by_queryid" => create_ash_wait_query_by_queryid(&mut buffer, queryid),
+        "ash_wait_query_by_query" => create_ash_wait_query_by_query(&mut buffer, queryid),
         unknown => {
             println!("handler plotter: unknown request: {}", unknown);
             todo!()
@@ -180,7 +182,7 @@ pub async fn handler_plotter(Path((plot_1, queryid)): Path<(String, String)>) ->
     cursor.into_inner()
 }
 
-pub fn create_awp(buffer: &mut [u8], queryid: String) {
+pub fn create_ash_wait_query_by_queryid(buffer: &mut [u8], queryid: String) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((2, 1));
@@ -189,6 +191,8 @@ pub fn create_awp(buffer: &mut [u8], queryid: String) {
         0,
         &true,
         &queryid.parse::<i64>().unwrap(),
+        &false,
+        "",
     );
     waits_by_query_id(
         &mut multi_backend,
@@ -196,6 +200,13 @@ pub fn create_awp(buffer: &mut [u8], queryid: String) {
         &true,
         &queryid.parse::<i64>().unwrap(),
     );
+}
+pub fn create_ash_wait_query_by_query(buffer: &mut [u8], query: String) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((1, 1));
+    wait_event_plot(&mut multi_backend, 0, &false, &0_i64, &true, &query);
+    //waits_by_query_id(&mut multi_backend, &true, &queryid.parse::<i64>().unwrap());
 }
 pub fn create_ash_wait_type_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
@@ -207,13 +218,13 @@ pub fn create_ash_wait_event_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((1, 1));
-    wait_event_plot(&mut multi_backend, 0, &false, &0_i64);
+    wait_event_plot(&mut multi_backend, 0, &false, &0_i64, &false, "");
 }
 pub fn create_ash_wait_event_and_queryid_overview(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_plot(&mut multi_backend, 0, &false, &0_i64);
+    wait_event_plot(&mut multi_backend, 0, &false, &0_i64, &false, "");
     waits_by_query_id(&mut multi_backend, 1, &false, &0_i64);
 }
 pub fn create_xid_age_plot(buffer: &mut [u8]) {
