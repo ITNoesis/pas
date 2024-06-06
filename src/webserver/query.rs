@@ -1,4 +1,4 @@
-use crate::DATA;
+use crate::{ARGS, DATA};
 use crate::{
     CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE, LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE,
     LABEL_AREA_SIZE_BOTTOM, MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE,
@@ -831,7 +831,97 @@ pub fn show_queries(
         .unwrap();
 }
 
-pub fn show_queries_html(queryid_filter: &bool, queryid: &i64) -> String {
+pub fn show_queries_queryid_html(queryid: &i64) -> String {
+    #[derive(Debug)]
+    struct QueryidAndTotal {
+        queryid: i64,
+        total: usize,
+    }
+    let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    let mut samples_per_query: HashMap<String, QueryidAndTotal> =
+        HashMap::with_capacity(pg_stat_activity.len());
+    for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
+        for r in per_sample_vector
+            .iter()
+            .filter(|r| r.query_id.as_ref().unwrap_or(&0) == queryid)
+        {
+            if r.state.as_deref().unwrap_or_default() == "active" {
+                samples_per_query
+                    .entry(r.query.as_deref().unwrap_or_default().to_string())
+                    .and_modify(|r| r.total += 1)
+                    .or_insert(QueryidAndTotal {
+                        queryid: *r.query_id.as_ref().unwrap_or(&0_i64),
+                        total: 1,
+                    });
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct QueryIdQueryTotal {
+        queryid: i64,
+        query: String,
+        total: usize,
+    }
+    let mut qc: Vec<QueryIdQueryTotal> = Vec::new();
+    for (query, vector) in samples_per_query {
+        qc.push(QueryIdQueryTotal {
+            query,
+            queryid: vector.queryid,
+            total: vector.total,
+        });
+    }
+    qc.sort_by(|a, b| b.total.cmp(&a.total));
+    let grand_total_samples: f64 = qc.iter().map(|r| r.total as f64).sum();
+
+    let mut html_output = format!(
+        r#"<table border=1>
+            <colgroup>
+                <col style="width:160px;">
+                <col style="width:80;">
+                <col style="width:100px;">
+                <col style="width:{}px;">
+            </colgroup>
+            <tr>
+                <th align=right>Query ID</th>
+                <th align=right>Percent</th>
+                <th align=right>Total</th>
+                <th>Query</th>
+            </tr>"#,
+        ARGS.graph_width - (160_u32 + 80_u32 + 100_u32)
+    );
+
+    for query in qc.iter() {
+        html_output += format!(
+            r#"<tr>
+                <td align=right>{}
+                </td>
+                <td align=right>{:6.2}%</td>
+                <td align=right>{:8}</td>
+                <td>{}</td>
+            </tr>"#,
+            query.queryid,
+            query.total as f64 / grand_total_samples * 100_f64,
+            query.total,
+            query.query
+        )
+        .as_str();
+    }
+    html_output += format!(
+        "<tr>
+                <td align=right>{:>20}</td>
+                <td align=right>{:6.2}%</td>
+                <td align=right>{:8}</td>
+                <td>{}</td>
+            </tr>",
+        "total", 100_f64, grand_total_samples, ""
+    )
+    .as_str();
+
+    html_output += "</table>";
+    html_output
+}
+pub fn show_queries_html() -> String {
     #[derive(Debug)]
     struct QueryAndTotal {
         query: String,
@@ -841,10 +931,7 @@ pub fn show_queries_html(queryid_filter: &bool, queryid: &i64) -> String {
     let mut samples_per_queryid: HashMap<i64, QueryAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
     for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
-        for r in per_sample_vector
-            .iter()
-            .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
-        {
+        for r in per_sample_vector.iter() {
             if r.state.as_deref().unwrap_or_default() == "active" {
                 samples_per_queryid
                     .entry(r.query_id.unwrap_or_default())
@@ -874,13 +961,13 @@ pub fn show_queries_html(queryid_filter: &bool, queryid: &i64) -> String {
     qc.sort_by(|a, b| b.total.cmp(&a.total));
     let grand_total_samples: f64 = qc.iter().map(|r| r.total as f64).sum();
 
-    let mut html_output = String::from(
+    let mut html_output = format!(
         r#"<table border=1>
             <colgroup>
                 <col style="width:160px;">
                 <col style="width:80;">
                 <col style="width:100px;">
-                <col style="width:1000px;">
+                <col style="width:{}px;">
             </colgroup>
             <tr>
                 <th align=right>Query ID</th>
@@ -888,6 +975,7 @@ pub fn show_queries_html(queryid_filter: &bool, queryid: &i64) -> String {
                 <th align=right>Total</th>
                 <th>Query</th>
             </tr>"#,
+        ARGS.graph_width - (160_u32 + 80_u32 + 100_u32)
     );
 
     for query in qc.iter() {

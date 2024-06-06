@@ -9,7 +9,10 @@ use std::io::Cursor;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::{webserver::query::waits_by_query_id, ARGS, DATA};
+use crate::{
+    webserver::query::{show_queries_queryid_html, waits_by_query_id},
+    ARGS, DATA,
+};
 
 mod io;
 mod query;
@@ -127,7 +130,7 @@ pub async fn handler_2_html(Path((plot_1, arg_1)): Path<(String, String)>) -> Ht
 pub async fn dual_handler_html(Path((plot_1, out_1)): Path<(String, String)>) -> Html<String> {
     let output: String = format!(r#"<img src="/plotter/{}/x">"#, plot_1);
     let html = match out_1.as_str() {
-        "all_queries" => show_queries_html(&false, &0_i64),
+        "all_queries" => show_queries_html(),
         &_ => todo!(),
     };
     format!("{}{}", output, html).into()
@@ -137,7 +140,7 @@ pub async fn dual_handler_html_queryid(
 ) -> Html<String> {
     let output: String = format!(r#"<img src="/plotter/{}/{}">"#, plot_1, queryid);
     let html = match out_1.as_str() {
-        "all_queries" => show_queries_html(&true, &queryid.parse::<i64>().unwrap()),
+        "all_queries" => show_queries_queryid_html(&queryid.parse::<i64>().unwrap()),
         &_ => todo!(),
     };
     format!("{}{}", output, html).into()
