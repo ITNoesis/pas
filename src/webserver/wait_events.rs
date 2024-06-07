@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use chrono::{DateTime, Local};
 use std::collections::BTreeMap;
 use std::ops::Bound::Included;
@@ -185,6 +186,7 @@ pub fn wait_event_plot(
         timestamp: DateTime<Local>,
         waits: BTreeMap<String, usize>,
     }
+    let query = URL_SAFE.decode(query).unwrap();
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
     let mut wait_event_counter: BTreeMap<String, usize> = BTreeMap::new();
     let mut timestamp_and_waits: Vec<DynamicDateAndWaits> = Vec::new();
@@ -200,7 +202,11 @@ pub fn wait_event_plot(
         for row in per_sample_vector
             .iter()
             .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
-            .filter(|r| !*query_filter || r.query.as_deref().unwrap_or_default() == query)
+            .filter(|r| {
+                !*query_filter
+                    || r.query.as_deref().unwrap_or_default()
+                        == String::from_utf8(query.clone()).unwrap()
+            })
         {
             if row.state.as_deref().unwrap_or_default() == "active" {
                 current_max_active += 1;

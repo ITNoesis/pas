@@ -6,3 +6,6 @@ By default the connection string is: 'postgresql:///', which means connecting to
 
 If your socket is in another place, and your databases uses a different port number, use the following socket specification:
 "postgresql://<DATABASE>?host=<SOCKET DIRECTORY>&port=<PORT>&user=<USER>"
+
+This might want to connect to a database with the name of the user, if so, use:
+"postgresql://?host=<SOCKET DIRECTORY>&port=<PORT>&user=<USER>&dbname=<DATABASE>"

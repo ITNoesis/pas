@@ -1,6 +1,6 @@
 [package]
 name = "pas"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 license = "apache-2.0"
 description = "A utility to obtain statistics from a postgres database cluster."
@@ -10,10 +10,11 @@ description = "A utility to obtain statistics from a postgres database cluster."
 [dependencies]
 anyhow = "1.0.86"
 axum = "0.7.5"
+base64 = "0.22.1"
 bigdecimal = "0.4.3"
 bounded-vec-deque = "0.1.1"
 chrono = { version = "0.4.38", features = ["serde"] }
-clap = { version = "4.5.4", features = ["derive"] }
+clap = { version = "4.5.6", features = ["derive"] }
 crossterm = "0.27.0"
 ctrlc = "3.4.4"
 futures = "0.3.30"
@@ -32,7 +33,7 @@ sqlx = { version = "0.7.4", features = [
   "chrono",
   "bigdecimal",
 ] }
-tokio = { version = "1.37.0", features = ["full"] }
+tokio = { version = "1.38.0", features = ["full"] }
 
 [package.metadata.generate-rpm]
 assets = [

@@ -1,15 +1,5 @@
 use crate::processor::{
-    PgDatabaseXidLimits,
-    PgStatActivity,
-    PgStatBgWriterSum,
-    PgStatDatabaseSum,
-    PgStatWalSum,
-    //PgWaitTypeActivity, PgWaitTypeBufferPin, PgWaitTypeClient, PgWaitTypeExtension, PgWaitTypeIO,
-    //PgWaitTypeIPC,
-    //PgWaitTypeLWLock,
-    //PgWaitTypeLock,
-    //PgWaitTypeTimeout,
-    //PgWaitTypes,
+    PgDatabaseXidLimits, PgStatActivity, PgStatBgWriterSum, PgStatDatabaseSum, PgStatWalSum,
 };
 use crate::{DataTransit, ARGS, DATA};
 
@@ -39,9 +29,9 @@ pub async fn archiver_main() -> Result<()> {
 
 pub async fn save_to_disk(high_time: DateTime<Local>) -> Result<()> {
     let mut transition = DataTransit::default();
-    let low_time = high_time - chrono::Duration::minutes(ARGS.archiver_interval);
+    let low_time = high_time.duration_trunc(chrono::Duration::minutes(ARGS.archiver_interval))?;
 
-    println!("archiver: low_time: {}, high_time: {}", low_time, high_time);
+    //println!("archiver: low_time: {}, high_time: {}", low_time, high_time);
 
     macro_rules! generate_transition_collections {
         ($([$category:ident, $struct:ident]),*) => {
@@ -68,16 +58,6 @@ pub async fn save_to_disk(high_time: DateTime<Local>) -> Result<()> {
         .collect::<Vec<(DateTime<Local>, Vec<PgStatActivity>)>>();
 
     generate_transition_collections!(
-        //[wait_event_types, PgWaitTypes],
-        //[wait_event_activity, PgWaitTypeActivity],
-        //[wait_event_bufferpin, PgWaitTypeBufferPin],
-        //[wait_event_client, PgWaitTypeClient],
-        //[wait_event_extension, PgWaitTypeExtension],
-        //[wait_event_io, PgWaitTypeIO],
-        //[wait_event_ipc, PgWaitTypeIPC],
-        //[wait_event_lock, PgWaitTypeLock],
-        //[wait_event_lwlock, PgWaitTypeLWLock],
-        //[wait_event_timeout, PgWaitTypeTimeout],
         [pg_stat_database_sum, PgStatDatabaseSum],
         [pg_stat_bgwriter_sum, PgStatBgWriterSum],
         [pg_stat_wal_sum, PgStatWalSum],
@@ -87,11 +67,11 @@ pub async fn save_to_disk(high_time: DateTime<Local>) -> Result<()> {
     let current_directory = current_dir()?;
     let filename = current_directory.join(format!(
         "pas_{}-{}-{}T{}-{}.json",
-        low_time.format("%Y"),
-        low_time.format("%m"),
-        low_time.format("%d"),
-        low_time.format("%H"),
-        low_time.format("%M"),
+        high_time.format("%Y"),
+        high_time.format("%m"),
+        high_time.format("%d"),
+        high_time.format("%H"),
+        high_time.format("%M"),
     ));
     write(filename.clone(), serde_json::to_string(&transition)?).with_context(|| {
         format!(
