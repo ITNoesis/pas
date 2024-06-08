@@ -28,6 +28,7 @@ use tokio::time;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    println!("PAS starting.");
     /*
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
@@ -134,7 +135,7 @@ async fn main() -> Result<()> {
     disable_raw_mode()?;
     */
     ctrlc::set_handler(move || {
-        println!("SIGINT received, terminating");
+        println!("SIGINT received, terminating.");
         let mut return_value = 0;
         if ARGS.archiver {
             match block_on(save_to_disk(Local::now())) {
@@ -162,6 +163,7 @@ async fn main() -> Result<()> {
     };
 
     if ARGS.webserver {
+        println!("PAS webserver started.");
         tokio::spawn(async move {
             match webserver_main().await {
                 Ok(_) => {}
@@ -174,6 +176,7 @@ async fn main() -> Result<()> {
     };
 
     if ARGS.archiver {
+        println!("PAS archiver started.");
         tokio::spawn(async move {
             match archiver_main().await {
                 Ok(_) => {}
@@ -197,6 +200,7 @@ async fn main() -> Result<()> {
         });
     };
 
+    println!("PAS running.");
     let mut interval = time::interval(Duration::from_secs(1));
     loop {
         interval.tick().await;

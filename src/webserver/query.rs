@@ -257,23 +257,26 @@ pub fn show_queries_queryid_html(queryid: &i64) -> String {
     let mut html_output = format!(
         r#"<table border=1>
             <colgroup>
-                <col style="width:160px;">
+                <col style="width:80;">
+                <col style="width:200;">
                 <col style="width:80;">
                 <col style="width:100px;">
                 <col style="width:{}px;">
             </colgroup>
             <tr>
+                <th align=right>Nr</th>
                 <th align=right>Query ID</th>
                 <th align=right>Percent</th>
                 <th align=right>Total</th>
                 <th>Query</th>
             </tr>"#,
-        ARGS.graph_width - (160_u32 + 80_u32 + 100_u32)
+        ARGS.graph_width - (80_u32 + 200_u32 + 80_u32 + 100_u32)
     );
 
-    for query in qc.iter() {
+    for (nr, query) in qc.iter().enumerate() {
         html_output += format!(
             r#"<tr>
+                <td align=right>{:8}</td>
                 <td align=right>{}</td>
                 <td align=right>{:6.2}%</td>
                 <td align=right>{:8}</td>
@@ -281,6 +284,7 @@ pub fn show_queries_queryid_html(queryid: &i64) -> String {
                   <a href="/dual_handler/ash_wait_query_by_query/selected_queries/{}">{}</a>
                 </td>
             </tr>"#,
+            nr,
             query.queryid,
             query.total as f64 / grand_total_samples * 100_f64,
             query.total,
@@ -291,12 +295,13 @@ pub fn show_queries_queryid_html(queryid: &i64) -> String {
     }
     html_output += format!(
         "<tr>
+                <td>{}</td>
                 <td align=right>{:>20}</td>
                 <td align=right>{:6.2}%</td>
                 <td align=right>{:8}</td>
                 <td>{}</td>
             </tr>",
-        "total", 100_f64, grand_total_samples, ""
+        "", "total", 100_f64, grand_total_samples, ""
     )
     .as_str();
 
@@ -587,6 +592,252 @@ pub fn waits_by_query_id(
     for (color_number, wait_event) in wait_event_counter.keys().enumerate() {
         contextarea
             .draw_series((0..).zip(queryid_total_waits.iter()).map(|(y, x)| {
+                let mut bar = if x.others {
+                    // others has the tendency to gather a lot of events, potentially making it
+                    // far bigger than a single queryid, even for the highest single querid.
+                    // therefore it's shown with no bar graph.
+                    Rectangle::new(
+                        [(0, SegmentValue::Exact(y)), (0, SegmentValue::Exact(y + 1))],
+                        Palette99::pick(color_number).filled(),
+                    )
+                } else {
+                    Rectangle::new(
+                        [
+                            (0, SegmentValue::Exact(y)),
+                            (
+                                x.waits
+                                    .range::<str, _>((
+                                        Included(wait_event.as_str()),
+                                        Included(last_key.as_str()),
+                                    ))
+                                    .map(|(_, v)| *v as isize)
+                                    .sum::<isize>() as usize,
+                                SegmentValue::Exact(y + 1),
+                            ),
+                        ],
+                        Palette99::pick(color_number).filled(),
+                    )
+                };
+                bar.set_margin(2, 2, 0, 0);
+                bar
+            }))
+            .unwrap()
+            .legend(move |(x, y)| {
+                Rectangle::new(
+                    [(x - 3, y - 3), (x + 3, y + 3)],
+                    Palette99::pick(color_number).filled(),
+                )
+            })
+            .label(format!(
+                "{:25} {:>8} {:6.2}%",
+                wait_event,
+                wait_event_counter.get(wait_event).unwrap(),
+                *wait_event_counter.get(wait_event).unwrap() as f64
+                    / wait_event_counter.values().map(|v| *v as f64).sum::<f64>()
+                    * 100_f64,
+            ));
+    }
+
+    contextarea
+        .configure_series_labels()
+        .border_style(BLACK)
+        .background_style(WHITE.mix(0.7))
+        .label_font((LABELS_STYLE_FONT, LABELS_STYLE_FONT_SIZE))
+        .position(LowerRight)
+        .draw()
+        .unwrap();
+}
+pub fn waits_by_query_text(
+    multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
+    backend_number: usize,
+    queryid_filter: &bool,
+    queryid: &i64,
+) {
+    let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    let mut wait_event_counter: BTreeMap<String, usize> = BTreeMap::new();
+    let mut query_waits: HashMap<String, BTreeMap<String, usize>> =
+        HashMap::with_capacity(pg_stat_activity.len());
+    for (_, per_sample_vector) in pg_stat_activity.iter() {
+        for row in per_sample_vector
+            .iter()
+            .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
+        {
+            if row.state.as_deref().unwrap_or_default() == "active" {
+                let wait_event = if format!(
+                    "{}:{}",
+                    row.wait_event_type.as_deref().unwrap_or_default(),
+                    row.wait_event.as_deref().unwrap_or_default()
+                ) == ":"
+                {
+                    "on_cpu".to_string()
+                } else {
+                    format!(
+                        "{}:{}",
+                        row.wait_event_type.as_deref().unwrap_or_default(),
+                        row.wait_event.as_deref().unwrap_or_default()
+                    )
+                };
+                wait_event_counter
+                    .entry(wait_event.clone())
+                    .and_modify(|r| *r += 1_usize)
+                    .or_insert(1_usize);
+                query_waits
+                    .entry(row.query.as_deref().unwrap_or_default().to_string())
+                    .and_modify(|r| {
+                        r.entry(wait_event.clone())
+                            .and_modify(|w| *w += 1)
+                            .or_insert(1_usize);
+                    })
+                    .or_insert(BTreeMap::from([(wait_event.clone(), 1_usize)]));
+            }
+        }
+    }
+    // insert all wait events to the btreemap of all queryid's
+    for (_, map) in query_waits.iter_mut() {
+        for (wait, _) in wait_event_counter.clone() {
+            map.entry(wait).or_insert(0_usize);
+        }
+    }
+    // get the "last" key from the wait_event_counter btreemap
+    let last_key = wait_event_counter
+        .keys()
+        .max()
+        .unwrap_or(&"".to_string())
+        .clone();
+
+    // samples_max is the highest number of samples that is found for all of the queryid's.
+    // this is needed to define the length of the graph for the horizontal stacked bars.
+    let mut samples_max = 0;
+    for (_, waits) in query_waits.iter() {
+        samples_max =
+            samples_max.max(waits.iter().map(|(_, nr)| *nr as isize).sum::<isize>() as usize);
+    }
+    #[derive(Debug, Default)]
+    struct DynamicQueryTextTotalWaits {
+        _query: String,
+        total: usize,
+        others: bool,
+        nr: usize,
+        waits: BTreeMap<String, usize>,
+    }
+
+    let mut query_total_waits: Vec<DynamicQueryTextTotalWaits> =
+        Vec::with_capacity(query_waits.len());
+
+    for (query, waits) in query_waits.iter() {
+        query_total_waits.push(DynamicQueryTextTotalWaits {
+            _query: query.to_string(),
+            waits: waits.clone(),
+            others: false,
+            nr: 0,
+            total: {
+                waits
+                    .iter()
+                    .map(|(_, nr)| *nr as isize)
+                    .sum::<isize>()
+                    .try_into()
+                    .unwrap()
+            },
+        })
+    }
+    //queryid_total_waits.sort_by_key(|k| k.total);
+    query_total_waits.sort_by(|a, b| b.total.cmp(&a.total));
+    for (nr, record) in query_total_waits.iter_mut().enumerate() {
+        record.nr = nr;
+    }
+
+    let mut query_total_waits_count = if query_total_waits.len() > 1 {
+        query_total_waits.len() - 1
+    } else {
+        query_total_waits.len()
+    };
+
+    let (_, y_size) = multi_backend[backend_number].dim_in_pixel();
+    let qtw_max = y_size as usize / 20;
+
+    if query_total_waits.len() > qtw_max {
+        let mut others = DynamicQueryTextTotalWaits {
+            ..Default::default()
+        };
+        others.total = query_total_waits.len() - qtw_max;
+        others.others = true;
+        query_total_waits.truncate(qtw_max);
+        query_total_waits.push(others);
+        query_total_waits_count = query_total_waits.len() - 1;
+    }
+
+    query_total_waits.reverse();
+
+    // build the graph
+    multi_backend[backend_number].fill(&WHITE).unwrap();
+    let mut contextarea = ChartBuilder::on(&multi_backend[backend_number])
+        .set_label_area_size(LabelAreaPosition::Left, 200)
+        .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
+        .caption(
+            "Query by number of samples",
+            (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE),
+        )
+        .build_cartesian_2d(
+            0..samples_max,
+            (0..query_total_waits_count).into_segmented(),
+        )
+        .unwrap();
+    contextarea
+        .configure_mesh()
+        .label_style((MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE))
+        .y_labels(query_total_waits_count)
+        .y_label_formatter(&|v| {
+            if query_total_waits
+                .iter()
+                .map(|r| r.others)
+                .nth({
+                    if let SegmentValue::CenterOf(val) = v {
+                        *val
+                    } else {
+                        0
+                    }
+                })
+                .unwrap_or_default()
+            {
+                format!(
+                    "..others: ({})",
+                    &query_total_waits
+                        .iter()
+                        .map(|r| r.total)
+                        .nth({
+                            if let SegmentValue::CenterOf(val) = v {
+                                *val
+                            } else {
+                                0
+                            }
+                        })
+                        .unwrap_or_default()
+                )
+            } else {
+                format!(
+                    "{}",
+                    query_total_waits
+                        .iter()
+                        .map(|r| r.nr)
+                        .nth({
+                            if let SegmentValue::CenterOf(val) = v {
+                                *val
+                            } else {
+                                0
+                            }
+                        })
+                        .unwrap_or(0)
+                )
+            }
+        })
+        .x_desc("Samples")
+        .x_label_formatter(&|n| n.to_string())
+        .draw()
+        .unwrap();
+    //
+    for (color_number, wait_event) in wait_event_counter.keys().enumerate() {
+        contextarea
+            .draw_series((0..).zip(query_total_waits.iter()).map(|(y, x)| {
                 let mut bar = if x.others {
                     // others has the tendency to gather a lot of events, potentially making it
                     // far bigger than a single queryid, even for the highest single querid.
