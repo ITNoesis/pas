@@ -1,6 +1,7 @@
 use anyhow::Result;
 use axum::{extract::Path, response::Html, response::IntoResponse, routing::get, Router};
 use image::{DynamicImage, ImageFormat};
+use io::iops;
 use plotters::prelude::*;
 use plotters::style::full_palette::{
     BLUE_600, BROWN, GREEN_800, GREY, LIGHTBLUE_300, PINK_A100, PURPLE, RED_900,
@@ -105,6 +106,7 @@ pub async fn root_handler() -> Html<String> {
      <li><a href="/handler/wal_size" target="right">WAL size</a></li>
      <li><a href="/handler/io_latency" target="right">IO latency</a></li>
      <li><a href="/handler/io_bandwidth" target="right">IO bandwidth</a></li>
+     <li><a href="/handler/iops" target="right">IOPS</a></li>
      <li><a href="/handler/xid_age" target="right">XID Age</a></li>
      <li><a href="/handler/we_qid_q" target="right">waits QueryID-Q</a></li>
     </nav>
@@ -161,6 +163,7 @@ pub async fn handler_plotter(Path((plot_1, queryid)): Path<(String, String)>) ->
         "wal_size" => create_wait_event_type_and_wal_size_plot(&mut buffer),
         "io_latency" => create_wait_event_type_and_io_latency_plot(&mut buffer),
         "io_bandwidth" => create_wait_event_type_and_io_bandwidth_plot(&mut buffer),
+        "iops" => create_iops_plot(&mut buffer),
         "xid_age" => create_xid_age_plot(&mut buffer),
         "we_qid_q" => create_wait_events_and_queryid_and_query(&mut buffer),
         "ash_wait_query_by_queryid" => create_ash_wait_query_by_queryid(&mut buffer, queryid),
@@ -242,6 +245,13 @@ pub fn create_wait_event_type_and_io_bandwidth_plot(buffer: &mut [u8]) {
     let mut multi_backend = backend.split_evenly((2, 1));
     wait_event_plot(&mut multi_backend, 0, &false, &0_i64, &false, "");
     io_bandwidth(&mut multi_backend, 1);
+}
+pub fn create_iops_plot(buffer: &mut [u8]) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((1, 1));
+    //wait_event_plot(&mut multi_backend, 0, &false, &0_i64, &false, "");
+    iops(&mut multi_backend, 0);
 }
 pub fn create_wait_event_type_and_io_latency_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
