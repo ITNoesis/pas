@@ -159,10 +159,11 @@ async fn main() -> Result<()> {
                     process::exit(1);
                 }
             }
+            println!("processor done.");
         });
     };
 
-    if ARGS.webserver {
+    if ARGS.webserver || ARGS.read.is_some() {
         println!("PAS webserver started.");
         tokio::spawn(async move {
             match webserver_main().await {

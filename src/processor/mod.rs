@@ -58,12 +58,13 @@ pub async fn processor_main() -> Result<()> {
     loop {
         interval.tick().await;
 
+        println!("tick done");
         PgStatActivity::fetch_and_add_to_data(&pool).await;
-        //WaitEvents::process_waits_and_add_to_data().await;
         PgStatDatabase::fetch_and_add_to_data(&pool).await;
         PgStatBgWriter::fetch_and_add_to_data(&pool).await;
         PgStatWal::fetch_and_add_to_data(&pool).await;
         PgSettings::fetch_and_add_to_data(&pool).await;
         PgDatabase::fetch_and_add_to_data(&pool).await;
+        println!("fetch done");
     }
 }

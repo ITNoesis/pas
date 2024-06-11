@@ -1,4 +1,5 @@
 use crate::DATA;
+use anyhow::Result;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use sqlx::{query_as, FromRow, Pool};
@@ -33,14 +34,18 @@ pub struct PgStatActivity {
 
 impl PgStatActivity {
     pub async fn fetch_and_add_to_data(pool: &Pool<sqlx::Postgres>) {
-        let pg_stat_activity = PgStatActivity::query(pool).await;
-        let current_timestamp = Local::now();
-        DATA.pg_stat_activity
-            .write()
-            .await
-            .push_back((current_timestamp, pg_stat_activity.clone()));
+        match PgStatActivity::query(pool).await {
+            Ok(pg_stat_activity) => {
+                let current_timestamp = Local::now();
+                DATA.pg_stat_activity
+                    .write()
+                    .await
+                    .push_back((current_timestamp, pg_stat_activity.clone()));
+            }
+            Err(_) => { /* database gone? */ }
+        }
     }
-    async fn query(pool: &Pool<sqlx::Postgres>) -> Vec<PgStatActivity> {
+    async fn query(pool: &Pool<sqlx::Postgres>) -> Result<Vec<PgStatActivity>> {
         let mut sql_rows: Vec<PgStatActivity> = query_as(
             "
             select clock_timestamp() as timestamp,
@@ -71,10 +76,10 @@ impl PgStatActivity {
         ",
         )
         .fetch_all(pool)
-        .await
-        .expect("error executing query");
+        .await?;
         sql_rows.sort_by_key(|a| *a.query_time.as_ref().unwrap_or(&0_i64));
         sql_rows.reverse();
-        sql_rows
+
+        Ok(sql_rows)
     }
 }

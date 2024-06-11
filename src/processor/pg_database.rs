@@ -2,6 +2,7 @@ use crate::processor::DeltaTable;
 use crate::processor::DELTATABLE;
 use crate::DATA;
 
+use anyhow::Result;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use sqlx::{query_as, FromRow, Pool};
@@ -138,11 +139,15 @@ pub struct PgDatabase {
 
 impl PgDatabase {
     pub async fn fetch_and_add_to_data(pool: &Pool<sqlx::Postgres>) {
-        let pg_database = PgDatabase::query(pool).await;
-        PgDatabaseXidLimits::process_pg_database(pg_database).await;
+        match PgDatabase::query(pool).await {
+            Ok(pg_database) => {
+                PgDatabaseXidLimits::process_pg_database(pg_database).await;
+            }
+            Err(_) => { /* database gone? */ }
+        }
     }
-    async fn query(pool: &Pool<sqlx::Postgres>) -> Vec<PgDatabase> {
-        let stat_database: Vec<PgDatabase> = query_as(
+    async fn query(pool: &Pool<sqlx::Postgres>) -> Result<Vec<PgDatabase>> {
+        let pg_database: Vec<PgDatabase> = query_as(
             "
             select clock_timestamp() as timestamp,
                    oid::text::int, 
@@ -164,8 +169,8 @@ impl PgDatabase {
         ",
         )
         .fetch_all(pool)
-        .await
-        .expect("error executing query");
-        stat_database
+        .await?;
+
+        Ok(pg_database)
     }
 }
