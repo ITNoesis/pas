@@ -4,7 +4,7 @@ use crate::{
     LABEL_AREA_SIZE_BOTTOM, LABEL_AREA_SIZE_LEFT, LABEL_AREA_SIZE_RIGHT, MESH_STYLE_FONT,
     MESH_STYLE_FONT_SIZE,
 };
-use full_palette::{GREEN_800, RED_300};
+use full_palette::{GREEN_800, LIGHTBLUE, RED_300};
 use futures::executor;
 use human_bytes::human_bytes;
 use plotters::backend::RGBPixel;
@@ -143,40 +143,38 @@ pub fn wal_io_times(
 
     let min_write = wal_events
         .iter()
-        .map(|(_, w)| {
-            if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
-                0_f64
-            } else {
-                w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps)
-            }
+        .filter(|(_, w)| {
+            w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
         })
+        .map(|(_, w)| w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps))
         .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     let max_write = wal_events
         .iter()
-        .map(|(_, w)| {
-            if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
-                0_f64
-            } else {
-                w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps)
-            }
+        .filter(|(_, w)| {
+            w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
         })
+        .map(|(_, w)| w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps))
         .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     contextarea
-        .draw_series(LineSeries::new(
-            wal_events.iter().map(|(timestamp, w)| {
-                (
-                    *timestamp,
-                    if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
-                        0_f64
-                    } else {
-                        w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps)
-                    },
-                )
-            }),
-            GREEN,
-        ))
+        .draw_series(
+            wal_events
+                .iter()
+                .filter(|(_, w)| {
+                    w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
+                })
+                .map(|(timestamp, w)| {
+                    Circle::new(
+                        (
+                            *timestamp,
+                            w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps),
+                        ),
+                        4,
+                        BLACK,
+                    )
+                }),
+        )
         .unwrap()
         .label(format!(
             "{:25} {:10.3} {:10.3} {:10.3} ms",
@@ -191,44 +189,33 @@ pub fn wal_io_times(
                 }
             },)
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 4, BLACK.filled()));
 
     let min_sync = wal_events
         .iter()
-        .map(|(_, w)| {
-            if w.wal_sync_ps == 0_f64 {
-                0_f64
-            } else {
-                w.wal_sync_time_ps / w.wal_sync_ps
-            }
-        })
+        .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
+        .map(|(_, w)| w.wal_sync_time_ps / w.wal_sync_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     let max_sync = wal_events
         .iter()
-        .map(|(_, w)| {
-            if w.wal_sync_ps == 0_f64 {
-                0_f64
-            } else {
-                w.wal_sync_time_ps / w.wal_sync_ps
-            }
-        })
+        .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
+        .map(|(_, w)| w.wal_sync_time_ps / w.wal_sync_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     contextarea
-        .draw_series(LineSeries::new(
-            wal_events.iter().map(|(timestamp, w)| {
-                (
-                    *timestamp,
-                    if w.wal_sync_ps == 0_f64 {
-                        0_f64
-                    } else {
-                        w.wal_sync_time_ps / w.wal_sync_ps
-                    },
-                )
-            }),
-            BLUE,
-        ))
+        .draw_series(
+            wal_events
+                .iter()
+                .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
+                .map(|(timestamp, w)| {
+                    Circle::new(
+                        (*timestamp, w.wal_sync_time_ps / w.wal_sync_ps),
+                        3,
+                        LIGHTBLUE,
+                    )
+                }),
+        )
         .unwrap()
         .label(format!(
             "{:25} {:10.3} {:10.3} {:10.3} ms",
@@ -243,7 +230,7 @@ pub fn wal_io_times(
                 }
             },)
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 3, LIGHTBLUE.filled()));
 
     contextarea
         .configure_series_labels()
@@ -370,21 +357,22 @@ pub fn wal_size(
     //
     let min_write = wal_events
         .iter()
+        .filter(|(_, w)| w.wal_bytes_ps > 0_f64)
         .map(|(_, w)| w.wal_bytes_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     let max_write = wal_events
         .iter()
         .map(|(_, w)| w.wal_bytes_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     contextarea
-        .draw_series(LineSeries::new(
+        .draw_series(
             wal_events
                 .iter()
-                .map(|(timestamp, w)| (*timestamp, w.wal_bytes_ps)),
-            GREEN,
-        ))
+                .filter(|(_, w)| w.wal_bytes_ps > 0_f64)
+                .map(|(timestamp, w)| Circle::new((*timestamp, w.wal_bytes_ps), 3, BLACK.filled())),
+        )
         .unwrap()
         .label(format!(
             "{:25} {:>10} {:>10} {:>10}",
@@ -393,7 +381,7 @@ pub fn wal_size(
             human_bytes(max_write),
             human_bytes(wal_events.back().map_or(0_f64, |(_, r)| r.wal_bytes_ps))
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 3, BLACK.filled()));
 
     contextarea
         .configure_series_labels()

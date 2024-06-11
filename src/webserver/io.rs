@@ -4,7 +4,7 @@ use crate::{
     LABEL_AREA_SIZE_BOTTOM, LABEL_AREA_SIZE_LEFT, LABEL_AREA_SIZE_RIGHT, MESH_STYLE_FONT,
     MESH_STYLE_FONT_SIZE,
 };
-use full_palette::{AMBER, DEEPORANGE};
+use full_palette::{GREY_700, LIGHTBLUE};
 use futures::executor;
 use human_bytes::human_bytes;
 use plotters::backend::RGBPixel;
@@ -169,7 +169,7 @@ pub fn iops(
                 .iter()
                 .filter(|(_, w)| w.wal_buffers_full_ps > 0_f64)
                 .map(|(timestamp, w)| {
-                    Circle::new((*timestamp, w.wal_buffers_full_ps), 4, PURPLE.filled())
+                    Circle::new((*timestamp, w.wal_buffers_full_ps), 6, PURPLE.filled())
                 }),
         )
         .unwrap()
@@ -182,7 +182,7 @@ pub fn iops(
                 .back()
                 .map_or(0_f64, |(_, r)| r.wal_buffers_full_ps)
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PURPLE.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 6, PURPLE.filled()));
     // wal write
     let min_wal_write = wal_events
         .iter()
@@ -201,7 +201,7 @@ pub fn iops(
                 .iter()
                 .filter(|(_, w)| w.wal_write_ps > 0_f64)
                 .map(|(timestamp, w)| {
-                    Circle::new((*timestamp, w.wal_write_ps), 3, DEEPORANGE.filled())
+                    Circle::new((*timestamp, w.wal_write_ps), 5, GREY_700.filled())
                 }),
         )
         .unwrap()
@@ -212,9 +212,7 @@ pub fn iops(
             max_wal_write,
             wal_events.back().map_or(0_f64, |(_, r)| r.wal_write_ps)
         ))
-        .legend(move |(x, y)| {
-            Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], DEEPORANGE.filled())
-        });
+        .legend(move |(x, y)| Circle::new((x, y), 5, GREY_700.filled()));
     /*
         // wal sync
         let min_sync = wal_events
@@ -262,7 +260,7 @@ pub fn iops(
             database_events
                 .iter()
                 .filter(|(_, d)| d.blks_read_ps > 0_f64)
-                .map(|(timestamp, d)| Circle::new((*timestamp, d.blks_read_ps), 2, GREEN.filled())),
+                .map(|(timestamp, d)| Circle::new((*timestamp, d.blks_read_ps), 4, GREEN.filled())),
         )
         .unwrap()
         .label(format!(
@@ -274,7 +272,7 @@ pub fn iops(
                 .back()
                 .map_or(0_f64, |(_, d)| d.blks_read_ps)
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 4, GREEN.filled()));
     // bgwriter buffers written backend
     let min_buf_backend = bgwriter_events
         .iter()
@@ -293,7 +291,7 @@ pub fn iops(
                 .iter()
                 .filter(|(_, b)| b.buffers_backend_ps > 0_f64)
                 .map(|(timestamp, b)| {
-                    Circle::new((*timestamp, b.buffers_backend_ps), 4, RED.filled())
+                    Circle::new((*timestamp, b.buffers_backend_ps), 3, RED.filled())
                 }),
         )
         .unwrap()
@@ -306,7 +304,7 @@ pub fn iops(
                 .back()
                 .map_or(0_f64, |(_, b)| b.buffers_backend_ps)
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 3, RED.filled()));
     // bgwriter buffers clean
     let min_buf_clean = bgwriter_events
         .iter()
@@ -325,7 +323,7 @@ pub fn iops(
                 .iter()
                 .filter(|(_, b)| b.buffers_clean_ps > 0_f64)
                 .map(|(timestamp, b)| {
-                    Circle::new((*timestamp, b.buffers_clean_ps), 4, AMBER.filled())
+                    Circle::new((*timestamp, b.buffers_clean_ps), 2, LIGHTBLUE.filled())
                 }),
         )
         .unwrap()
@@ -338,7 +336,7 @@ pub fn iops(
                 .back()
                 .map_or(0_f64, |(_, b)| b.buffers_clean_ps)
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], AMBER.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 2, LIGHTBLUE.filled()));
     // bgwriter buffers checkpoint
     let min_buf_checkpoint = bgwriter_events
         .iter()
@@ -357,7 +355,7 @@ pub fn iops(
                 .iter()
                 .filter(|(_, b)| b.buffers_checkpoint_ps > 0_f64)
                 .map(|(timestamp, b)| {
-                    Circle::new((*timestamp, b.buffers_checkpoint_ps), 4, BLUE.filled())
+                    Circle::new((*timestamp, b.buffers_checkpoint_ps), 2, BLUE.filled())
                 }),
         )
         .unwrap()
@@ -370,7 +368,7 @@ pub fn iops(
                 .back()
                 .map_or(0_f64, |(_, b)| b.buffers_checkpoint_ps)
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 2, BLUE.filled()));
     // total IO
     let min_tot_io = wal_events
         .iter()
@@ -630,47 +628,31 @@ pub fn io_times(
     let low_value_f64 = 0_f64;
     let wal_high_value_write = wal_events
         .iter()
-        .map(|(_, w)| {
-            if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
-                0_f64
-            } else {
-                w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps)
-            }
-        })
+        .filter(|(_, w)| w.wal_buffers_full_ps + w.wal_write_ps > 0_f64)
+        .map(|(_, w)| w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps))
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let wal_high_value_sync = wal_events
         .iter()
-        .map(|(_, w)| {
-            if w.wal_sync_ps == 0_f64 {
-                0_f64
-            } else {
-                w.wal_sync_time_ps / w.wal_sync_ps
-            }
-        })
+        .filter(|(_, w)| w.wal_sync_ps > 0_f64)
+        .map(|(_, w)| w.wal_sync_time_ps / w.wal_sync_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let database_high_value_read = database_events
         .iter()
-        .map(|(_, d)| {
-            if d.blks_read_ps == 0_f64 {
-                0_f64
-            } else {
-                d.blk_read_time_ps / d.blks_read_ps
-            }
-        })
+        .filter(|(_, d)| d.blks_read_ps > 0_f64)
+        .map(|(_, d)| d.blk_read_time_ps / d.blks_read_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let database_high_value_write = database_events
         .iter()
         .zip(bgwriter_events.iter())
+        .filter(|((_, _), (_, b))| {
+            b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps > 0_f64
+        })
         .map(|((_, d), (_, b))| {
-            if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps == 0_f64 {
-                0_f64
-            } else {
-                d.blk_write_time_ps
-                    / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
-            }
+            d.blk_write_time_ps
+                / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
         })
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -756,40 +738,38 @@ pub fn io_times(
     // wal write
     let min_write = wal_events
         .iter()
-        .map(|(_, w)| {
-            if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
-                0_f64
-            } else {
-                w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps)
-            }
+        .filter(|(_, w)| {
+            w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
         })
+        .map(|(_, w)| w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps))
         .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     let max_write = wal_events
         .iter()
-        .map(|(_, w)| {
-            if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
-                0_f64
-            } else {
-                w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps)
-            }
+        .filter(|(_, w)| {
+            w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
         })
+        .map(|(_, w)| w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps))
         .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     contextarea
-        .draw_series(LineSeries::new(
-            wal_events.iter().map(|(timestamp, w)| {
-                (
-                    *timestamp,
-                    if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
-                        0_f64
-                    } else {
-                        w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps)
-                    },
-                )
-            }),
-            GREEN,
-        ))
+        .draw_series(
+            wal_events
+                .iter()
+                .filter(|(_, w)| {
+                    w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
+                })
+                .map(|(timestamp, w)| {
+                    Circle::new(
+                        (
+                            *timestamp,
+                            w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps),
+                        ),
+                        4,
+                        GREEN.filled(),
+                    )
+                }),
+        )
         .unwrap()
         .label(format!(
             "{:25} {:10.3} {:10.3} {:10.3} ms",
@@ -804,44 +784,29 @@ pub fn io_times(
                 }
             },)
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 4, GREEN.filled()));
     // wal sync
     let min_sync = wal_events
         .iter()
-        .map(|(_, w)| {
-            if w.wal_sync_ps == 0_f64 {
-                0_f64
-            } else {
-                w.wal_sync_time_ps / w.wal_sync_ps
-            }
-        })
+        .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
+        .map(|(_, w)| w.wal_sync_time_ps / w.wal_sync_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     let max_sync = wal_events
         .iter()
-        .map(|(_, w)| {
-            if w.wal_sync_ps == 0_f64 {
-                0_f64
-            } else {
-                w.wal_sync_time_ps / w.wal_sync_ps
-            }
-        })
+        .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
+        .map(|(_, w)| w.wal_sync_time_ps / w.wal_sync_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     contextarea
-        .draw_series(LineSeries::new(
-            wal_events.iter().map(|(timestamp, w)| {
-                (
-                    *timestamp,
-                    if w.wal_sync_ps == 0_f64 {
-                        0_f64
-                    } else {
-                        w.wal_sync_time_ps / w.wal_sync_ps
-                    },
-                )
-            }),
-            BLUE,
-        ))
+        .draw_series(
+            wal_events
+                .iter()
+                .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
+                .map(|(timestamp, w)| {
+                    Circle::new((*timestamp, w.wal_sync_time_ps / w.wal_sync_ps), 3, BLUE)
+                }),
+        )
         .unwrap()
         .label(format!(
             "{:25} {:10.3} {:10.3} {:10.3} ms",
@@ -856,44 +821,29 @@ pub fn io_times(
                 }
             },)
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 3, BLUE.filled()));
     // blocks read
     let min_database_read = database_events
         .iter()
-        .map(|(_, d)| {
-            if d.blks_read_ps == 0_f64 {
-                0_f64
-            } else {
-                d.blk_read_time_ps / d.blks_read_ps
-            }
-        })
+        .filter(|(_, d)| d.blks_read_ps > 0_f64 && d.blk_read_time_ps > 0_f64)
+        .map(|(_, d)| d.blk_read_time_ps / d.blks_read_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     let max_database_read = database_events
         .iter()
-        .map(|(_, d)| {
-            if d.blks_read_ps == 0_f64 {
-                0_f64
-            } else {
-                d.blk_read_time_ps / d.blks_read_ps
-            }
-        })
+        .filter(|(_, d)| d.blks_read_ps > 0_f64 && d.blk_read_time_ps > 0_f64)
+        .map(|(_, d)| d.blk_read_time_ps / d.blks_read_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     contextarea
-        .draw_series(LineSeries::new(
-            database_events.iter().map(|(timestamp, d)| {
-                (
-                    *timestamp,
-                    if d.blks_read_ps == 0_f64 {
-                        0_f64
-                    } else {
-                        d.blk_read_time_ps / d.blks_read_ps
-                    },
-                )
-            }),
-            BLACK,
-        ))
+        .draw_series(
+            database_events
+                .iter()
+                .filter(|(_, d)| d.blks_read_ps > 0_f64 && d.blk_read_time_ps > 0_f64)
+                .map(|(timestamp, d)| {
+                    Circle::new((*timestamp, d.blk_read_time_ps / d.blks_read_ps), 2, BLACK)
+                }),
+        )
         .unwrap()
         .label(format!(
             "{:25} {:10.3} {:10.3} {:10.3} ms",
@@ -908,56 +858,57 @@ pub fn io_times(
                 }
             },)
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLACK.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 2, BLACK.filled()));
     // blocks write
     let min_database_write = database_events
         .iter()
         .zip(bgwriter_events.iter())
+        .filter(|((_, d), (_, b))| {
+            b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps > 0_f64
+                && d.blk_write_time_ps > 0_f64
+        })
         .map(|((_, d), (_, b))| {
-            if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps == 0_f64 {
-                0_f64
-            } else {
-                d.blk_write_time_ps
-                    / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
-            }
+            d.blk_write_time_ps
+                / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
         })
         .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     let max_database_write = database_events
         .iter()
         .zip(bgwriter_events.iter())
+        .filter(|((_, d), (_, b))| {
+            b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps > 0_f64
+                && d.blk_write_time_ps > 0_f64
+        })
         .map(|((_, d), (_, b))| {
-            if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps == 0_f64 {
-                0_f64
-            } else {
-                d.blk_write_time_ps
-                    / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
-            }
+            d.blk_write_time_ps
+                / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
         })
         .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap_or_default();
     contextarea
-        .draw_series(LineSeries::new(
+        .draw_series(
             database_events
                 .iter()
                 .zip(bgwriter_events.iter())
+                .filter(|((_, d), (_, b))| {
+                    b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps > 0_f64
+                        && d.blk_write_time_ps > 0_f64
+                })
                 .map(|((timestamp, d), (_, b))| {
-                    (
-                        *timestamp,
-                        if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps
-                            == 0_f64
-                        {
-                            0_f64
-                        } else {
+                    Circle::new(
+                        (
+                            *timestamp,
                             d.blk_write_time_ps
                                 / (b.buffers_checkpoint_ps
                                     + b.buffers_clean_ps
-                                    + b.buffers_backend_ps)
-                        },
+                                    + b.buffers_backend_ps),
+                        ),
+                        3,
+                        RED.filled(),
                     )
                 }),
-            RED,
-        ))
+        )
         .unwrap()
         .label(format!(
             "{:25} {:10.3} {:10.3} {:10.3} ms",
@@ -978,7 +929,7 @@ pub fn io_times(
                     }
                 },)
         ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()));
+        .legend(move |(x, y)| Circle::new((x, y), 3, RED.filled()));
 
     contextarea
         .configure_series_labels()
@@ -1069,155 +1020,6 @@ pub fn io_bandwidth(
             "{:25} {:>10} {:>10} {:>10}",
             "", "min", "max", "last"
         ));
-    // blocks read
-    let min_read = database_events
-        .iter()
-        .map(|(_, d)| d.blks_read_ps)
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-    let max_read = database_events
-        .iter()
-        .map(|(_, d)| d.blks_read_ps)
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-    contextarea
-        .draw_series(AreaSeries::new(
-            database_events
-                .iter()
-                .zip(bgwriter_events.iter())
-                .map(|((timestamp, d), (_, b))| {
-                    (
-                        *timestamp,
-                        (d.blks_read_ps
-                            + b.buffers_checkpoint_ps
-                            + b.buffers_clean_ps
-                            + b.buffers_backend_ps)
-                            * 8192_f64,
-                    )
-                }),
-            0.0,
-            GREEN,
-        ))
-        .unwrap()
-        .label(format!(
-            "{:25} {:>10} {:>10} {:>10}",
-            "Blocks read",
-            human_bytes(min_read * 8192_f64),
-            human_bytes(max_read * 8192_f64),
-            database_events
-                .iter()
-                .last()
-                .map_or("".to_string(), |(_, b)| human_bytes(
-                    b.blks_read_ps * 8192_f64
-                ))
-        ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], GREEN.filled()));
-    // blocks written checkpointer
-    let min_read = bgwriter_events
-        .iter()
-        .map(|(_, d)| d.buffers_checkpoint_ps)
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-    let max_read = bgwriter_events
-        .iter()
-        .map(|(_, d)| d.buffers_checkpoint_ps)
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-    contextarea
-        .draw_series(AreaSeries::new(
-            bgwriter_events.iter().map(|(timestamp, b)| {
-                (
-                    *timestamp,
-                    (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
-                        * 8192_f64,
-                )
-            }),
-            0.0,
-            BLUE,
-        ))
-        .unwrap()
-        .label(format!(
-            "{:25} {:>10} {:>10} {:>10}",
-            "Checkpointer write",
-            human_bytes(min_read * 8192_f64),
-            human_bytes(max_read * 8192_f64),
-            bgwriter_events
-                .iter()
-                .last()
-                .map_or("".to_string(), |(_, b)| human_bytes(
-                    b.buffers_checkpoint_ps * 8192_f64
-                ))
-        ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLUE.filled()));
-    // blocks written bgwriter
-    let min_read = bgwriter_events
-        .iter()
-        .map(|(_, d)| d.buffers_clean_ps)
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-    let max_read = bgwriter_events
-        .iter()
-        .map(|(_, d)| d.buffers_clean_ps)
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-    contextarea
-        .draw_series(AreaSeries::new(
-            bgwriter_events.iter().map(|(timestamp, b)| {
-                (
-                    *timestamp,
-                    (b.buffers_clean_ps + b.buffers_backend_ps) * 8192_f64,
-                )
-            }),
-            0.0,
-            PURPLE,
-        ))
-        .unwrap()
-        .label(format!(
-            "{:25} {:>10} {:>10} {:>10}",
-            "Bgwriter write",
-            human_bytes(min_read * 8192_f64),
-            human_bytes(max_read * 8192_f64),
-            bgwriter_events
-                .iter()
-                .last()
-                .map_or("".to_string(), |(_, b)| human_bytes(
-                    b.buffers_clean_ps * 8192_f64
-                ))
-        ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], PURPLE.filled()));
-    // blocks written backend
-    let min_read = bgwriter_events
-        .iter()
-        .map(|(_, d)| d.buffers_backend_ps)
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-    let max_read = bgwriter_events
-        .iter()
-        .map(|(_, d)| d.buffers_backend_ps)
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-    contextarea
-        .draw_series(AreaSeries::new(
-            bgwriter_events
-                .iter()
-                .map(|(timestamp, b)| (*timestamp, b.buffers_backend_ps * 8192_f64)),
-            0.0,
-            RED,
-        ))
-        .unwrap()
-        .label(format!(
-            "{:25} {:>10} {:>10} {:>10}",
-            "Backend write",
-            human_bytes(min_read * 8192_f64),
-            human_bytes(max_read * 8192_f64),
-            bgwriter_events
-                .iter()
-                .last()
-                .map_or("".to_string(), |(_, b)| human_bytes(
-                    b.buffers_backend_ps * 8192_f64
-                ))
-        ))
-        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()));
     // checkpoints timed
     contextarea
         .draw_series(
@@ -1254,6 +1056,212 @@ pub fn io_bandwidth(
                 .sum::<f64>()
         ))
         .legend(move |(x, y)| TriangleMarker::new((x, y), 5, RED_300.filled()));
+    // total
+    let min_total = database_events
+        .iter()
+        .zip(bgwriter_events.iter())
+        .map(|((_, d), (_, b))| {
+            d.blks_read_ps + b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps
+        })
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    let max_total = database_events
+        .iter()
+        .zip(bgwriter_events.iter())
+        .map(|((_, d), (_, b))| {
+            d.blks_read_ps + b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    contextarea
+        .draw_series(LineSeries::new(
+            database_events
+                .iter()
+                .zip(bgwriter_events.iter())
+                .map(|((timestamp, d), (_, b))| {
+                    (
+                        *timestamp,
+                        (d.blks_read_ps
+                            + b.buffers_checkpoint_ps
+                            + b.buffers_clean_ps
+                            + b.buffers_backend_ps)
+                            * 8192_f64,
+                    )
+                }),
+            BLACK,
+        ))
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "total",
+            human_bytes(min_total * 8192_f64),
+            human_bytes(max_total * 8192_f64),
+            human_bytes(
+                database_events
+                    .iter()
+                    .last()
+                    .map_or(0_f64, |(_, d)| d.blks_read_ps * 8192_f64)
+                    + bgwriter_events.iter().last().map_or(0_f64, |(_, b)| (b
+                        .buffers_checkpoint_ps
+                        + b.buffers_clean_ps
+                        + b.buffers_backend_ps)
+                        * 8192_f64)
+            )
+        ))
+        .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLACK.filled()));
+    // blocks read
+    let min_read = database_events
+        .iter()
+        .filter(|(_, d)| d.blks_read_ps > 0_f64)
+        .map(|(_, d)| d.blks_read_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    let max_read = database_events
+        .iter()
+        .filter(|(_, d)| d.blks_read_ps > 0_f64)
+        .map(|(_, d)| d.blks_read_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    contextarea
+        .draw_series(
+            database_events
+                .iter()
+                .filter(|(_, d)| d.blks_read_ps > 0_f64)
+                .map(|(timestamp, d)| {
+                    Circle::new((*timestamp, d.blks_read_ps * 8192_f64), 5, GREEN.filled())
+                }),
+        )
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "blocks read",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            database_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.blks_read_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Circle::new((x, y), 5, GREEN.filled()));
+    // blocks written checkpointer
+    let min_read = bgwriter_events
+        .iter()
+        .filter(|(_, b)| b.buffers_checkpoint_ps > 0_f64)
+        .map(|(_, b)| b.buffers_checkpoint_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    let max_read = bgwriter_events
+        .iter()
+        .map(|(_, b)| b.buffers_checkpoint_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    contextarea
+        .draw_series(
+            bgwriter_events
+                .iter()
+                .filter(|(_, b)| b.buffers_checkpoint_ps > 0_f64)
+                .map(|(timestamp, b)| {
+                    Circle::new(
+                        (*timestamp, b.buffers_checkpoint_ps * 8192_f64),
+                        4,
+                        BLUE.filled(),
+                    )
+                }),
+        )
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Checkpointer write",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            bgwriter_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.buffers_checkpoint_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Circle::new((x, y), 4, BLUE.filled()));
+    // blocks written bgwriter
+    let min_read = bgwriter_events
+        .iter()
+        .filter(|(_, b)| b.buffers_clean_ps > 0_f64)
+        .map(|(_, b)| b.buffers_clean_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    let max_read = bgwriter_events
+        .iter()
+        .map(|(_, b)| b.buffers_clean_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    contextarea
+        .draw_series(
+            bgwriter_events
+                .iter()
+                .filter(|(_, b)| b.buffers_clean_ps > 0_f64)
+                .map(|(timestamp, b)| {
+                    Circle::new(
+                        (*timestamp, b.buffers_clean_ps * 8192_f64),
+                        3,
+                        PURPLE.filled(),
+                    )
+                }),
+        )
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Bgwriter write",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            bgwriter_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.buffers_clean_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Circle::new((x, y), 3, PURPLE.filled()));
+    // blocks written backend
+    let min_read = bgwriter_events
+        .iter()
+        .filter(|(_, b)| b.buffers_backend_ps > 0_f64)
+        .map(|(_, b)| b.buffers_backend_ps)
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    let max_read = bgwriter_events
+        .iter()
+        .map(|(_, b)| b.buffers_backend_ps)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_default();
+    contextarea
+        .draw_series(
+            bgwriter_events
+                .iter()
+                .filter(|(_, b)| b.buffers_backend_ps > 0_f64)
+                .map(|(timestamp, b)| {
+                    Circle::new(
+                        (*timestamp, b.buffers_backend_ps * 8192_f64),
+                        2,
+                        RED.filled(),
+                    )
+                }),
+        )
+        .unwrap()
+        .label(format!(
+            "{:25} {:>10} {:>10} {:>10}",
+            "Backend write",
+            human_bytes(min_read * 8192_f64),
+            human_bytes(max_read * 8192_f64),
+            bgwriter_events
+                .iter()
+                .last()
+                .map_or("".to_string(), |(_, b)| human_bytes(
+                    b.buffers_backend_ps * 8192_f64
+                ))
+        ))
+        .legend(move |(x, y)| Circle::new((x, y), 2, RED.filled()));
 
     contextarea
         .configure_series_labels()
