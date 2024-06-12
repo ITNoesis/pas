@@ -841,7 +841,11 @@ pub fn io_times(
                 .iter()
                 .filter(|(_, d)| d.blks_read_ps > 0_f64 && d.blk_read_time_ps > 0_f64)
                 .map(|(timestamp, d)| {
-                    Circle::new((*timestamp, d.blk_read_time_ps / d.blks_read_ps), 2, BLACK)
+                    Circle::new(
+                        (*timestamp, d.blk_read_time_ps / d.blks_read_ps),
+                        2,
+                        BLACK.filled(),
+                    )
                 }),
         )
         .unwrap()

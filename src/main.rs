@@ -28,6 +28,7 @@ use tokio::time;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::init();
     println!("PAS starting.");
     /*
     stdout().execute(EnterAlternateScreen)?;
@@ -206,6 +207,4 @@ async fn main() -> Result<()> {
     loop {
         interval.tick().await;
     }
-
-    //Ok(())
 }

@@ -5,6 +5,7 @@ use crate::{DataTransit, ARGS, DATA};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, DurationRound, Local};
+use log::debug;
 use std::{env::current_dir, fs::write};
 use tokio::time::{interval, Duration, MissedTickBehavior};
 
@@ -14,6 +15,10 @@ pub async fn archiver_main() -> Result<()> {
     let mut high_time = Local::now()
         .duration_trunc(chrono::Duration::minutes(ARGS.archiver_interval))?
         + chrono::Duration::minutes(ARGS.archiver_interval);
+    debug!(
+        "Archiver settings: interval: {:#?}, high_time: {}",
+        interval, high_time
+    );
 
     loop {
         interval.tick().await;
@@ -30,6 +35,7 @@ pub async fn archiver_main() -> Result<()> {
 pub async fn save_to_disk(high_time: DateTime<Local>) -> Result<()> {
     let mut transition = DataTransit::default();
     let low_time = high_time.duration_trunc(chrono::Duration::minutes(ARGS.archiver_interval))?;
+    debug!("low_time: {}, high_time: {}", low_time, high_time);
 
     //println!("archiver: low_time: {}, high_time: {}", low_time, high_time);
 
@@ -73,6 +79,7 @@ pub async fn save_to_disk(high_time: DateTime<Local>) -> Result<()> {
         high_time.format("%H"),
         high_time.format("%M"),
     ));
+    debug!("writing to: {:?}", filename);
     write(filename.clone(), serde_json::to_string(&transition)?).with_context(|| {
         format!(
             "Error writing {} to {}",

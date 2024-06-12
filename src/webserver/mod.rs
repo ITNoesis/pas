@@ -2,6 +2,7 @@ use anyhow::Result;
 use axum::{extract::Path, response::Html, response::IntoResponse, routing::get, Router};
 use image::{DynamicImage, ImageFormat};
 use io::iops;
+use log::debug;
 use plotters::prelude::*;
 use plotters::style::full_palette::{
     BLUE_600, BROWN, GREEN_800, GREY, LIGHTBLUE_300, PINK_A100, PURPLE, RED_900,
@@ -59,12 +60,9 @@ pub async fn webserver_main() -> Result<()> {
         )
         .route("/plotter/:plot_1/:queryid", get(handler_plotter))
         .route("/", get(root_handler));
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", ARGS.webserver_port))
-        .await
-        .unwrap();
-    axum::serve(listener, app.into_make_service())
-        .await
-        .unwrap();
+    let listener =
+        tokio::net::TcpListener::bind(format!("0.0.0.0:{}", ARGS.webserver_port)).await?;
+    axum::serve(listener, app.into_make_service()).await?;
 
     Ok(())
 }
@@ -73,8 +71,10 @@ pub async fn root_handler() -> Html<String> {
     loop {
         // wait until there is data inside DATA
         if DATA.pg_stat_database_sum.read().await.iter().count() > 0 {
+            debug!("Records found in DATA.pg_stat_database_sum, continue.");
             break;
         } else {
+            debug!("No records found in DATA.pg_stat_database_sum, sleeping and retry...");
             sleep(Duration::from_secs(1)).await;
         }
     }

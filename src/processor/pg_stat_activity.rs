@@ -1,6 +1,7 @@
 use crate::DATA;
 use anyhow::Result;
 use chrono::{DateTime, Local};
+use log::{debug, trace};
 use serde::{Deserialize, Serialize};
 use sqlx::{query_as, FromRow, Pool};
 
@@ -36,13 +37,16 @@ impl PgStatActivity {
     pub async fn fetch_and_add_to_data(pool: &Pool<sqlx::Postgres>) {
         match PgStatActivity::query(pool).await {
             Ok(pg_stat_activity) => {
+                trace!("pg_stat_activity: {:#?}", pg_stat_activity);
                 let current_timestamp = Local::now();
                 DATA.pg_stat_activity
                     .write()
                     .await
                     .push_back((current_timestamp, pg_stat_activity.clone()));
             }
-            Err(_) => { /* database gone? */ }
+            Err(_) => {
+                debug!("Pool connection failed.");
+            }
         }
     }
     async fn query(pool: &Pool<sqlx::Postgres>) -> Result<Vec<PgStatActivity>> {

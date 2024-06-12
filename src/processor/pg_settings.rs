@@ -1,6 +1,8 @@
 use crate::processor::DeltaTable;
 
+use anyhow::Result;
 use chrono::{DateTime, Local};
+use log::{debug, trace};
 use sqlx::{query_as, FromRow, Pool};
 
 // this pg_database is consistent with postgres version 15
@@ -20,10 +22,17 @@ pub struct PgSettings {
 
 impl PgSettings {
     pub async fn fetch_and_add_to_data(pool: &Pool<sqlx::Postgres>) {
-        let pg_settings = PgSettings::query(pool).await;
-        PgSettings::add_to_deltatable(pg_settings).await;
+        match PgSettings::query(pool).await {
+            Ok(pg_settings) => {
+                trace!("pg_settings: {:#?}", pg_settings);
+                PgSettings::add_to_deltatable(pg_settings).await;
+            }
+            Err(_) => {
+                debug!("Pool connection failed.");
+            }
+        }
     }
-    async fn query(pool: &Pool<sqlx::Postgres>) -> Vec<PgSettings> {
+    async fn query(pool: &Pool<sqlx::Postgres>) -> Result<Vec<PgSettings>> {
         let pg_settings: Vec<PgSettings> = query_as(
             "
             select clock_timestamp() as timestamp,
@@ -50,9 +59,9 @@ impl PgSettings {
         ",
         )
         .fetch_all(pool)
-        .await
-        .expect("error executing query");
-        pg_settings
+        .await?;
+
+        Ok(pg_settings)
     }
     async fn add_to_deltatable(pg_settings: Vec<PgSettings>) {
         let pg_settings_timestamp = pg_settings.last().map(|r| r.timestamp).unwrap();

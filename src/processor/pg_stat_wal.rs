@@ -2,8 +2,10 @@ use crate::processor::DeltaTable;
 use crate::processor::DELTATABLE;
 use crate::DATA;
 
+use anyhow::Result;
 use bigdecimal::ToPrimitive;
 use chrono::{DateTime, Local};
+use log::{debug, trace};
 use serde::{Deserialize, Serialize};
 use sqlx::{query_as, FromRow, Pool};
 
@@ -149,10 +151,17 @@ pub struct PgStatWal {
 
 impl PgStatWal {
     pub async fn fetch_and_add_to_data(pool: &Pool<sqlx::Postgres>) {
-        let pg_stat_wal = PgStatWal::query(pool).await;
-        PgStatWalSum::process_pg_stat_wal(pg_stat_wal).await;
+        match PgStatWal::query(pool).await {
+            Ok(pg_stat_wal) => {
+                trace!("pg_stat_wal: {:#?}", pg_stat_wal);
+                PgStatWalSum::process_pg_stat_wal(pg_stat_wal).await;
+            }
+            Err(_) => {
+                debug!("Pool connection failed.");
+            }
+        }
     }
-    async fn query(pool: &Pool<sqlx::Postgres>) -> PgStatWal {
+    async fn query(pool: &Pool<sqlx::Postgres>) -> Result<PgStatWal> {
         let stat_wal: PgStatWal = query_as(
             "
             select clock_timestamp() as timestamp,
@@ -169,10 +178,8 @@ impl PgStatWal {
         ",
         )
         .fetch_one(pool)
-        .await
-        .expect("error executing query");
-        //sql_rows.sort_by_key(|a| a.query_time.as_ref().map_or(0_i64, |r| r.microseconds));
-        //sql_rows.reverse();
-        stat_wal
+        .await?;
+
+        Ok(stat_wal)
     }
 }

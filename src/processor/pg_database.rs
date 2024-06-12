@@ -4,6 +4,7 @@ use crate::DATA;
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
+use log::{debug, trace};
 use serde::{Deserialize, Serialize};
 use sqlx::{query_as, FromRow, Pool};
 
@@ -34,6 +35,7 @@ impl PgDatabaseXidLimits {
                 .unwrap() as f64,
         )
         .await;
+
         DeltaTable::add_or_update(
             "pg_database.age_datminmxid",
             pg_database_timestamp,
@@ -141,9 +143,12 @@ impl PgDatabase {
     pub async fn fetch_and_add_to_data(pool: &Pool<sqlx::Postgres>) {
         match PgDatabase::query(pool).await {
             Ok(pg_database) => {
+                trace!("pg_database: {:#?}", pg_database);
                 PgDatabaseXidLimits::process_pg_database(pg_database).await;
             }
-            Err(_) => { /* database gone? */ }
+            Err(_) => {
+                debug!("Pool connection failed.");
+            }
         }
     }
     async fn query(pool: &Pool<sqlx::Postgres>) -> Result<Vec<PgDatabase>> {

@@ -74,12 +74,12 @@ pub fn wait_event_type_plot(
         .iter()
         .map(|v| v.timestamp)
         .min()
-        .unwrap();
+        .unwrap_or_default();
     let end_time = timestamp_and_waits
         .iter()
         .map(|v| v.timestamp)
         .max()
-        .unwrap();
+        .unwrap_or_default();
     let low_value = 0_usize;
     let high_value = max_active;
 
@@ -251,12 +251,12 @@ pub fn wait_event_plot(
         .iter()
         .map(|v| v.timestamp)
         .min()
-        .unwrap();
+        .unwrap_or_default();
     let end_time = timestamp_and_waits
         .iter()
         .map(|v| v.timestamp)
         .max()
-        .unwrap();
+        .unwrap_or_default();
     let low_value = 0_usize;
     let high_value = max_active;
 

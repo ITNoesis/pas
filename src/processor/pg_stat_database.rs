@@ -2,7 +2,9 @@ use crate::processor::DeltaTable;
 use crate::processor::DELTATABLE;
 use crate::DATA;
 
+use anyhow::Result;
 use chrono::{DateTime, Local};
+use log::{debug, trace};
 use serde::{Deserialize, Serialize};
 use sqlx::{query_as, FromRow, Pool};
 
@@ -243,10 +245,17 @@ pub struct PgStatDatabase {
 
 impl PgStatDatabase {
     pub async fn fetch_and_add_to_data(pool: &Pool<sqlx::Postgres>) {
-        let pg_stat_database = PgStatDatabase::query(pool).await;
-        PgStatDatabaseSum::process_pg_stat_database(pg_stat_database).await;
+        match PgStatDatabase::query(pool).await {
+            Ok(pg_stat_database) => {
+                trace!("pg_stat_database: {:#?}", pg_stat_database);
+                PgStatDatabaseSum::process_pg_stat_database(pg_stat_database).await
+            }
+            Err(_) => {
+                debug!("Pool connection failed.");
+            }
+        }
     }
-    async fn query(pool: &Pool<sqlx::Postgres>) -> Vec<PgStatDatabase> {
+    async fn query(pool: &Pool<sqlx::Postgres>) -> Result<Vec<PgStatDatabase>> {
         let stat_database: Vec<PgStatDatabase> = query_as(
             "
             select clock_timestamp() as timestamp,
@@ -282,10 +291,8 @@ impl PgStatDatabase {
         ",
         )
         .fetch_all(pool)
-        .await
-        .expect("error executing query");
-        //sql_rows.sort_by_key(|a| a.query_time.as_ref().map_or(0_i64, |r| r.microseconds));
-        //sql_rows.reverse();
-        stat_database
+        .await?;
+
+        Ok(stat_database)
     }
 }

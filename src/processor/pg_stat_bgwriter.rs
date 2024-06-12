@@ -2,7 +2,9 @@ use crate::processor::DeltaTable;
 use crate::processor::DELTATABLE;
 use crate::DATA;
 
+use anyhow::Result;
 use chrono::{DateTime, Local};
+use log::{debug, trace};
 use serde::{Deserialize, Serialize};
 use sqlx::{query_as, FromRow, Pool};
 
@@ -164,10 +166,18 @@ pub struct PgStatBgWriter {
 
 impl PgStatBgWriter {
     pub async fn fetch_and_add_to_data(pool: &Pool<sqlx::Postgres>) {
-        let pg_stat_bgwriter = PgStatBgWriter::query(pool).await;
-        PgStatBgWriterSum::process_pg_bgwriter(pg_stat_bgwriter).await;
+        //let pg_stat_bgwriter = PgStatBgWriter::query(pool).await;
+        match PgStatBgWriter::query(pool).await {
+            Ok(pg_stat_bgwriter) => {
+                trace!("pg_stat_bgwriter: {:#?}", pg_stat_bgwriter);
+                PgStatBgWriterSum::process_pg_bgwriter(pg_stat_bgwriter).await;
+            }
+            Err(_) => {
+                debug!("Pool connection failed.");
+            }
+        }
     }
-    async fn query(pool: &Pool<sqlx::Postgres>) -> PgStatBgWriter {
+    async fn query(pool: &Pool<sqlx::Postgres>) -> Result<PgStatBgWriter> {
         let stat_bgwriter: PgStatBgWriter = query_as(
             "
             select clock_timestamp() as timestamp,
@@ -186,8 +196,7 @@ impl PgStatBgWriter {
         ",
         )
         .fetch_one(pool)
-        .await
-        .expect("error executing query");
-        stat_bgwriter
+        .await?;
+        Ok(stat_bgwriter)
     }
 }
