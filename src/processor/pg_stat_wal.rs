@@ -5,7 +5,7 @@ use crate::DATA;
 use anyhow::Result;
 use bigdecimal::ToPrimitive;
 use chrono::{DateTime, Local};
-use log::{debug, trace};
+use log::{trace, warn};
 use serde::{Deserialize, Serialize};
 use sqlx::{query_as, FromRow, Pool};
 
@@ -156,8 +156,8 @@ impl PgStatWal {
                 trace!("pg_stat_wal: {:#?}", pg_stat_wal);
                 PgStatWalSum::process_pg_stat_wal(pg_stat_wal).await;
             }
-            Err(_) => {
-                debug!("Pool connection failed.");
+            Err(error) => {
+                warn!("Pool connection failed: {:?}", error);
             }
         }
     }

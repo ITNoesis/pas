@@ -2,7 +2,7 @@ use crate::processor::DeltaTable;
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use log::{debug, trace};
+use log::{trace, warn};
 use sqlx::{query_as, FromRow, Pool};
 
 // this pg_database is consistent with postgres version 15
@@ -27,8 +27,8 @@ impl PgSettings {
                 trace!("pg_settings: {:#?}", pg_settings);
                 PgSettings::add_to_deltatable(pg_settings).await;
             }
-            Err(_) => {
-                debug!("Pool connection failed.");
+            Err(error) => {
+                warn!("Pool connection failed: {:?}", error);
             }
         }
     }

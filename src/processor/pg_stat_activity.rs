@@ -1,7 +1,7 @@
 use crate::DATA;
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use log::{debug, trace};
+use log::{trace, warn};
 use serde::{Deserialize, Serialize};
 use sqlx::{query_as, FromRow, Pool};
 
@@ -44,8 +44,8 @@ impl PgStatActivity {
                     .await
                     .push_back((current_timestamp, pg_stat_activity.clone()));
             }
-            Err(_) => {
-                debug!("Pool connection failed.");
+            Err(error) => {
+                warn!("Pool connection failed: {:?}", error);
             }
         }
     }

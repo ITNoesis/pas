@@ -7,7 +7,7 @@ use crate::{
 };
 
 use anyhow::Result;
-use log::debug;
+use log::{debug, info, warn};
 use once_cell::sync::Lazy;
 use sqlx::{postgres::PgPoolOptions, Executor};
 use std::{collections::HashMap, time::Duration};
@@ -38,7 +38,7 @@ pub async fn processor_main() -> Result<()> {
     let mut interval = time::interval(Duration::from_secs(ARGS.interval));
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-    debug!("Setup database connectionpool.");
+    info!("Setup database connectionpool.");
     // loop until connection pool becomes available
     let pool = loop {
         match PgPoolOptions::new()
@@ -55,19 +55,22 @@ pub async fn processor_main() -> Result<()> {
             .await
         {
             Ok(pool) => {
-                debug!("Database connectionpool created.");
+                info!("Database connectionpool created.");
                 break pool;
             }
-            Err(_) => {
-                debug!("Database connectionpool creation failed, retrying");
+            Err(error) => {
+                warn!(
+                    "Database connectionpool creation failed, error: {:?}, retrying",
+                    error
+                );
                 interval.tick().await;
             }
         };
     };
 
     loop {
-        debug!("tick!");
         interval.tick().await;
+        debug!("tick!");
 
         PgStatActivity::fetch_and_add_to_data(&pool).await;
         PgStatDatabase::fetch_and_add_to_data(&pool).await;

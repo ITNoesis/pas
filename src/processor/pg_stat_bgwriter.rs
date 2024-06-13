@@ -4,7 +4,7 @@ use crate::DATA;
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use log::{debug, trace};
+use log::{trace, warn};
 use serde::{Deserialize, Serialize};
 use sqlx::{query_as, FromRow, Pool};
 
@@ -172,8 +172,8 @@ impl PgStatBgWriter {
                 trace!("pg_stat_bgwriter: {:#?}", pg_stat_bgwriter);
                 PgStatBgWriterSum::process_pg_bgwriter(pg_stat_bgwriter).await;
             }
-            Err(_) => {
-                debug!("Pool connection failed.");
+            Err(error) => {
+                warn!("Pool connection failed: {:?}", error);
             }
         }
     }

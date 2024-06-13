@@ -4,7 +4,7 @@ use crate::DATA;
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use log::{debug, trace};
+use log::{trace, warn};
 use serde::{Deserialize, Serialize};
 use sqlx::{query_as, FromRow, Pool};
 
@@ -250,8 +250,8 @@ impl PgStatDatabase {
                 trace!("pg_stat_database: {:#?}", pg_stat_database);
                 PgStatDatabaseSum::process_pg_stat_database(pg_stat_database).await
             }
-            Err(_) => {
-                debug!("Pool connection failed.");
+            Err(error) => {
+                warn!("Pool connection failed: {:?}", error);
             }
         }
     }

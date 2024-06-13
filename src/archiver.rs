@@ -16,7 +16,7 @@ pub async fn archiver_main() -> Result<()> {
         .duration_trunc(chrono::Duration::minutes(ARGS.archiver_interval))?
         + chrono::Duration::minutes(ARGS.archiver_interval);
     debug!(
-        "Archiver settings: interval: {:#?}, high_time: {}",
+        "Archiver settings:\ninterval: {:#?},\nhigh_time: {}",
         interval, high_time
     );
 
@@ -35,9 +35,10 @@ pub async fn archiver_main() -> Result<()> {
 pub async fn save_to_disk(high_time: DateTime<Local>) -> Result<()> {
     let mut transition = DataTransit::default();
     let low_time = high_time.duration_trunc(chrono::Duration::minutes(ARGS.archiver_interval))?;
-    debug!("low_time: {}, high_time: {}", low_time, high_time);
-
-    //println!("archiver: low_time: {}, high_time: {}", low_time, high_time);
+    debug!(
+        "save_to_disk: low_time: {}, high_time: {}",
+        low_time, high_time
+    );
 
     macro_rules! generate_transition_collections {
         ($([$category:ident, $struct:ident]),*) => {
