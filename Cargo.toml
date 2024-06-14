@@ -1,6 +1,6 @@
 [package]
 name = "pas"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 license = "apache-2.0"
 description = "A utility to obtain statistics from a postgres database cluster."
