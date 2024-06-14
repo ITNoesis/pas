@@ -139,7 +139,7 @@ async fn main() -> Result<()> {
         println!("SIGINT received, terminating.");
         let mut return_value = 0;
         if ARGS.archiver {
-            match block_on(save_to_disk(Local::now())) {
+            match block_on(save_to_disk(Local::now(), false)) {
                 Ok(_) => {}
                 Err(error) => {
                     return_value = 1;

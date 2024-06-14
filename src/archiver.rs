@@ -16,14 +16,16 @@ pub async fn archiver_main() -> Result<()> {
         .duration_trunc(chrono::Duration::minutes(ARGS.archiver_interval))?
         + chrono::Duration::minutes(ARGS.archiver_interval);
     debug!(
-        "Archiver settings:\ninterval: {:#?},\nhigh_time: {}",
-        interval, high_time
+        "Archiver settings:\ninterval: {:#?},\ncurrent_time: {:?}, high_time: {:?}",
+        interval,
+        Local::now(),
+        high_time,
     );
 
     loop {
         interval.tick().await;
         if Local::now() > high_time {
-            match save_to_disk(high_time).await {
+            match save_to_disk(high_time, true).await {
                 Ok(_) => {}
                 Err(error) => return Err(error),
             }
@@ -32,9 +34,16 @@ pub async fn archiver_main() -> Result<()> {
     }
 }
 
-pub async fn save_to_disk(high_time: DateTime<Local>) -> Result<()> {
+pub async fn save_to_disk(high_time: DateTime<Local>, interval_completed: bool) -> Result<()> {
     let mut transition = DataTransit::default();
-    let low_time = high_time.duration_trunc(chrono::Duration::minutes(ARGS.archiver_interval))?;
+
+    let low_time = if interval_completed {
+        (high_time - chrono::Duration::minutes(ARGS.archiver_interval))
+            .duration_trunc(chrono::Duration::minutes(ARGS.archiver_interval))?
+    } else {
+        high_time.duration_trunc(chrono::Duration::minutes(ARGS.archiver_interval))?
+    };
+
     debug!(
         "save_to_disk: low_time: {}, high_time: {}",
         low_time, high_time
