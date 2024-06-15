@@ -1,0 +1,30 @@
+# place as /etc/systemd/system/pas.service
+[Unit]
+Description=Pas: Postgres Activity Statistics gatherer.
+# allow restart 5 times
+StartLimitIntervalSec=1d
+StartLimitBurst=5
+
+[Service]
+Type=simple
+#User=pas
+#Group=pas
+
+Restart=on-failure
+RestartSec=5
+
+WorkingDirectory=/glide/pas
+# -A = enable archiver: archives gathered data into the working directory
+#      !! pas does not cleanup !!
+# -c = connection string. By default, pas will try to connect to the socket in `/tmp` with default port number 4321.
+#
+#      !! For ultimate flexibility, pas will NOT complain about a socket or network connection not being available !!
+#      !! Instead, it will just silently wait for the connection to become available.                              !!
+#      !! If a connection drops such as because of database shutdown, it will just try to reconnect, and will      !!
+#      !! not complain and just try to reconnect for the connection becomes available again.                       !!
+#
+ExecStart=/usr/local/bin/procstat -A
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target
