@@ -23,7 +23,7 @@ WorkingDirectory=/glide/pas
 #      !! If a connection drops such as because of database shutdown, it will just try to reconnect, and will      !!
 #      !! not complain and just try to reconnect for the connection becomes available again.                       !!
 #
-ExecStart=/usr/local/bin/procstat -A
+ExecStart=/usr/local/bin/pas -A
 KillSignal=SIGINT
 
 [Install]
