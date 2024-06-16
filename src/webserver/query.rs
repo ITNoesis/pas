@@ -11,9 +11,11 @@ use plotters::coord::Shift;
 use plotters::prelude::*;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Bound::Included;
+
 pub fn show_queries(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
+    exclude_clientread: bool,
 ) {
     #[derive(Debug)]
     struct QueryAndTotal {
@@ -24,7 +26,9 @@ pub fn show_queries(
     let mut samples_per_queryid: HashMap<i64, QueryAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
     for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
-        for r in per_sample_vector.iter() {
+        for r in per_sample_vector.iter().filter(|r| {
+            !exclude_clientread || r.wait_event.as_deref().unwrap_or_default() != "clientread"
+        }) {
             if r.state.as_deref().unwrap_or_default() == "active" {
                 samples_per_queryid
                     .entry(r.query_id.unwrap_or_default())
@@ -120,7 +124,7 @@ pub fn show_queries(
         .unwrap();
 }
 
-pub fn show_queries_query_html(query: &str) -> String {
+pub fn show_queries_query_html(query: &str, show_clientread: String) -> String {
     #[derive(Debug)]
     struct QueryidAndTotal {
         queryid: i64,
@@ -131,10 +135,21 @@ pub fn show_queries_query_html(query: &str) -> String {
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
     let mut samples_per_query: HashMap<String, QueryidAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
+    let exclude_clientread = if show_clientread.as_str() == "Y" {
+        false
+    } else {
+        true
+    };
     for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
-        for r in per_sample_vector.iter().filter(|r| {
-            r.query.as_deref().unwrap_or_default() == String::from_utf8(query.clone()).unwrap()
-        }) {
+        for r in per_sample_vector
+            .iter()
+            .filter(|r| {
+                r.query.as_deref().unwrap_or_default() == String::from_utf8(query.clone()).unwrap()
+            })
+            .filter(|r| {
+                !exclude_clientread || r.wait_event.as_deref().unwrap_or_default() != "clientread"
+            })
+        {
             if r.state.as_deref().unwrap_or_default() == "active" {
                 samples_per_query
                     .entry(r.query.as_deref().unwrap_or_default().to_string())
@@ -211,7 +226,7 @@ pub fn show_queries_query_html(query: &str) -> String {
     html_output += "</table>";
     html_output
 }
-pub fn show_queries_queryid_html(queryid: &i64) -> String {
+pub fn show_queries_queryid_html(queryid: &i64, show_clientread: String) -> String {
     #[derive(Debug)]
     struct QueryidAndTotal {
         queryid: i64,
@@ -220,10 +235,18 @@ pub fn show_queries_queryid_html(queryid: &i64) -> String {
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
     let mut samples_per_query: HashMap<String, QueryidAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
+    let exclude_clientread = if show_clientread.as_str() == "Y" {
+        false
+    } else {
+        true
+    };
     for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
         for r in per_sample_vector
             .iter()
             .filter(|r| r.query_id.as_ref().unwrap_or(&0) == queryid)
+            .filter(|r| {
+                !exclude_clientread || r.wait_event.as_deref().unwrap_or_default() != "clientread"
+            })
         {
             if r.state.as_deref().unwrap_or_default() == "active" {
                 samples_per_query
@@ -281,7 +304,7 @@ pub fn show_queries_queryid_html(queryid: &i64) -> String {
                 <td align=right>{:6.2}%</td>
                 <td align=right>{:8}</td>
                 <td>
-                  <a href="/dual_handler/ash_wait_query_by_query/selected_queries/{}">{}</a>
+                  <a href="/dual_handler/ash_wait_query_by_query/selected_queries/{}/{}">{}</a>
                 </td>
             </tr>"#,
             nr,
@@ -289,6 +312,7 @@ pub fn show_queries_queryid_html(queryid: &i64) -> String {
             query.total as f64 / grand_total_samples * 100_f64,
             query.total,
             URL_SAFE.encode(query.query.clone()),
+            show_clientread,
             query.query
         )
         .as_str();
@@ -308,7 +332,7 @@ pub fn show_queries_queryid_html(queryid: &i64) -> String {
     html_output += "</table>";
     html_output
 }
-pub fn show_queries_html() -> String {
+pub fn show_queries_html(show_clientread: String) -> String {
     #[derive(Debug)]
     struct QueryAndTotal {
         query: String,
@@ -317,8 +341,15 @@ pub fn show_queries_html() -> String {
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
     let mut samples_per_queryid: HashMap<i64, QueryAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
+    let exclude_clientread = if show_clientread.as_str() == "Y" {
+        false
+    } else {
+        true
+    };
     for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
-        for r in per_sample_vector.iter() {
+        for r in per_sample_vector.iter().filter(|r| {
+            !exclude_clientread || r.wait_event.as_deref().unwrap_or_default() != "clientread"
+        }) {
             if r.state.as_deref().unwrap_or_default() == "active" {
                 samples_per_queryid
                     .entry(r.query_id.unwrap_or_default())
@@ -369,15 +400,16 @@ pub fn show_queries_html() -> String {
         html_output += format!(
             r#"<tr>
                 <td align=right>
-                  <a href="/dual_handler/ash_wait_query_by_queryid/all_queries/{}">{:>20}</a>
+                  <a href="/dual_handler/ash_wait_query_by_queryid/all_queries/{}/{}">{:>20}</a>
                 </td>
                 <td align=right>{:6.2}%</td>
                 <td align=right>{:8}</td>
                 <td>
-                  <a href="/dual_handler/ash_wait_query_by_query/selected_queries/{}">{}</a>
+                  <a href="/dual_handler/ash_wait_query_by_query/selected_queries/{}/{}">{}</a>
                 </td>
             </tr>"#,
             query.query_id,
+            show_clientread,
             query.query_id,
             query.total as f64 / grand_total_samples * 100_f64,
             query.total,
@@ -386,6 +418,7 @@ pub fn show_queries_html() -> String {
             } else {
                 URL_SAFE.encode(query.query.to_string())
             },
+            show_clientread,
             if query.query_id == 0 {
                 "*".to_string()
             } else {
@@ -413,6 +446,7 @@ pub fn waits_by_query_id(
     backend_number: usize,
     queryid_filter: &bool,
     queryid: &i64,
+    exclude_clientread: bool,
 ) {
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
     let mut wait_event_counter: BTreeMap<String, usize> = BTreeMap::new();
@@ -422,6 +456,9 @@ pub fn waits_by_query_id(
         for row in per_sample_vector
             .iter()
             .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
+            .filter(|r| {
+                !exclude_clientread || r.wait_event.as_deref().unwrap_or_default() != "clientread"
+            })
         {
             if row.state.as_deref().unwrap_or_default() == "active" {
                 let wait_event = if format!(
@@ -652,6 +689,7 @@ pub fn waits_by_query_text(
     backend_number: usize,
     queryid_filter: &bool,
     queryid: &i64,
+    exclude_clientread: bool,
 ) {
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
     let mut wait_event_counter: BTreeMap<String, usize> = BTreeMap::new();
@@ -661,6 +699,9 @@ pub fn waits_by_query_text(
         for row in per_sample_vector
             .iter()
             .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
+            .filter(|r| {
+                !exclude_clientread || r.wait_event.as_deref().unwrap_or_default() != "clientread"
+            })
         {
             if row.state.as_deref().unwrap_or_default() == "active" {
                 let wait_event = if format!(
@@ -740,7 +781,6 @@ pub fn waits_by_query_text(
             },
         })
     }
-    //queryid_total_waits.sort_by_key(|k| k.total);
     query_total_waits.sort_by(|a, b| b.total.cmp(&a.total));
     for (nr, record) in query_total_waits.iter_mut().enumerate() {
         record.nr = nr;

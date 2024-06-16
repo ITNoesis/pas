@@ -19,6 +19,7 @@ use plotters::prelude::*;
 pub fn wait_event_type_plot(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
+    exclude_clientread: bool,
 ) {
     #[derive(Debug, Default)]
     struct DynamicDateAndWaits {
@@ -36,7 +37,9 @@ pub fn wait_event_type_plot(
         };
         let mut current_waits_data: BTreeMap<String, usize> = BTreeMap::new();
         let mut current_max_active = 0;
-        for row in per_sample_vector.iter() {
+        for row in per_sample_vector.iter().filter(|r| {
+            !exclude_clientread || r.wait_event.as_deref().unwrap_or_default() != "clientread"
+        }) {
             if row.state.as_deref().unwrap_or_default() == "active" {
                 current_max_active += 1;
                 let wait_event = if row.wait_event_type.as_deref().unwrap_or_default() == "" {
@@ -180,6 +183,7 @@ pub fn wait_event_plot(
     queryid: &i64,
     query_filter: &bool,
     query: &str,
+    exclude_clientread: bool,
 ) {
     #[derive(Debug, Default)]
     struct DynamicDateAndWaits {
@@ -198,10 +202,12 @@ pub fn wait_event_plot(
         };
         let mut current_waits_data: BTreeMap<String, usize> = BTreeMap::new();
         let mut current_max_active = 0;
-        // !*queryid_filter || (*queryid_filter && r.query_id.as_ref().unwrap_or(&0) == queryid)
         for row in per_sample_vector
             .iter()
             .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
+            .filter(|r| {
+                !exclude_clientread || r.wait_event.as_deref().unwrap_or_default() != "clientread"
+            })
             .filter(|r| {
                 !*query_filter
                     || r.query.as_deref().unwrap_or_default()

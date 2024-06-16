@@ -51,14 +51,23 @@ pub fn wait_type_color(wait_event_type: &str) -> RGBColor {
 
 pub async fn webserver_main() -> Result<()> {
     let app = Router::new()
-        .route("/handler/:plot_1", get(handler_1_html))
-        .route("/handler/:plot_1/:arg_1", get(handler_2_html))
-        .route("/dual_handler/:plot_1/:out_1", get(dual_handler_html))
+        .route("/handler/:plot_1/:show_clientread", get(handler_1_html))
         .route(
-            "/dual_handler/:plot_1/:out_1/:arg_1",
+            "/handler/:plot_1/:arg_1/:show_clientread",
+            get(handler_2_html),
+        )
+        .route(
+            "/dual_handler/:plot_1/:out_1/:show_clientread",
+            get(dual_handler_html),
+        )
+        .route(
+            "/dual_handler/:plot_1/:out_1/:arg_1/:show_clientread",
             get(dual_handler_html_queryid),
         )
-        .route("/plotter/:plot_1/:queryid", get(handler_plotter))
+        .route(
+            "/plotter/:plot_1/:queryid/:show_clientread",
+            get(handler_plotter),
+        )
         .route("/", get(root_handler));
     let listener =
         tokio::net::TcpListener::bind(format!("0.0.0.0:{}", ARGS.webserver_port)).await?;
@@ -99,16 +108,18 @@ pub async fn root_handler() -> Html<String> {
    <div class = "column_left">
     <nav>
      <li><a href="/" target="right">Home</a></li>
-     <li><a href="/handler/ash_wait_type" target="right">ASH by wait type</a></li>
-     <li><a href="/handler/ash_wait_event" target="right">ASH by wait event</a></li>
-     <li><a href="/dual_handler/ash_wait_query/all_queries" target="right">ASH and Queries</a></li>
-     <li><a href="/handler/wal_io_times" target="right">WAL latency</a></li>
-     <li><a href="/handler/wal_size" target="right">WAL size</a></li>
-     <li><a href="/handler/io_latency" target="right">IO latency</a></li>
-     <li><a href="/handler/io_bandwidth" target="right">IO bandwidth</a></li>
-     <li><a href="/handler/iops" target="right">IOPS</a></li>
-     <li><a href="/handler/xid_age" target="right">XID Age</a></li>
-     <li><a href="/handler/we_qid_q" target="right">waits QueryID-Q</a></li>
+     <li><a href="/handler/ash_wait_type/Y" target="right">ASH by wait type</a></li>
+     <li><a href="/handler/ash_wait_event/Y" target="right">ASH by wait event</a></li>
+     <li><a href="/dual_handler/ash_wait_query/all_queries/Y" target="right">ASH and Queries</a></li>
+     <li><a href="/handler/wal_io_times/x" target="right">WAL latency</a></li>
+     <li><a href="/handler/wal_size/x" target="right">WAL size</a></li>
+     <li><a href="/handler/io_latency/x" target="right">IO latency</a></li>
+     <li><a href="/handler/io_bandwidth/x" target="right">IO bandwidth</a></li>
+     <li><a href="/handler/iops/x" target="right">IOPS</a></li>
+     <li><a href="/handler/xid_age/x" target="right">XID Age</a></li>
+     <li><a href="/handler/ash_wait_type/N" target="right">ASH by wait type (no clientread)</a></li>
+     <li><a href="/handler/ash_wait_event/N" target="right">ASH by wait event (no clientread)</a></li>
+     <li><a href="/dual_handler/ash_wait_query/all_queries/N" target="right">ASH and Queries (no clientread)</a></li>
     </nav>
    </div>
    <div class = "column_right">
@@ -122,52 +133,88 @@ pub async fn root_handler() -> Html<String> {
     .into()
 }
 
-pub async fn handler_1_html(Path(plot_1): Path<String>) -> Html<String> {
-    format!(r#"<img src="/plotter/{}/x">"#, plot_1).into()
+pub async fn handler_1_html(
+    Path((plot_1, show_clientread)): Path<(String, String)>,
+) -> Html<String> {
+    format!(r#"<img src="/plotter/{}/x/{}">"#, plot_1, show_clientread).into()
 }
-pub async fn handler_2_html(Path((plot_1, arg_1)): Path<(String, String)>) -> Html<String> {
-    format!(r#"<img src="/plotter/{}/{}">"#, plot_1, arg_1).into()
+pub async fn handler_2_html(
+    Path((plot_1, arg_1, show_clientread)): Path<(String, String, String)>,
+) -> Html<String> {
+    format!(
+        r#"<img src="/plotter/{}/{}/{}">"#,
+        plot_1, arg_1, show_clientread
+    )
+    .into()
 }
-pub async fn dual_handler_html(Path((plot_1, out_1)): Path<(String, String)>) -> Html<String> {
-    let output: String = format!(r#"<img src="/plotter/{}/x">"#, plot_1);
+pub async fn dual_handler_html(
+    Path((plot_1, out_1, show_clientread)): Path<(String, String, String)>,
+) -> Html<String> {
+    let output: String = format!(r#"<img src="/plotter/{}/x/{}">"#, plot_1, show_clientread);
     let html = match out_1.as_str() {
-        "all_queries" => show_queries_html(),
+        "all_queries" => show_queries_html(show_clientread),
         &_ => todo!(),
     };
     format!("{}{}", output, html).into()
 }
 pub async fn dual_handler_html_queryid(
-    Path((plot_1, out_1, queryid)): Path<(String, String, String)>,
+    Path((plot_1, out_1, queryid, show_clientread)): Path<(String, String, String, String)>,
 ) -> Html<String> {
-    let output: String = format!(r#"<img src="/plotter/{}/{}">"#, plot_1, queryid);
+    debug!(
+        "dual_handler: plot_1: {}, out_1: {}, queryid: {}, show_clientread: {}",
+        plot_1, out_1, queryid, show_clientread
+    );
+    let output: String = format!(
+        r#"<img src="/plotter/{}/{}/{}">"#,
+        plot_1, queryid, show_clientread
+    );
     let html = match out_1.as_str() {
-        "all_queries" => show_queries_queryid_html(&queryid.parse::<i64>().unwrap()),
-        "selected_queries" => show_queries_query_html(&queryid),
+        "all_queries" => {
+            show_queries_queryid_html(&queryid.parse::<i64>().unwrap(), show_clientread)
+        }
+        "selected_queries" => show_queries_query_html(&queryid, show_clientread),
         &_ => todo!(),
     };
     format!("{}{}", output, html).into()
 }
 
-pub async fn handler_plotter(Path((plot_1, queryid)): Path<(String, String)>) -> impl IntoResponse {
+pub async fn handler_plotter(
+    Path((plot_1, queryid, show_clientread)): Path<(String, String, String)>,
+) -> impl IntoResponse {
+    debug!(
+        "handler_plotter: plot_1: {}, queryid: {}, show_clientread: {}",
+        plot_1, queryid, show_clientread
+    );
     let mut buffer = vec![
         0;
         (ARGS.graph_width * ARGS.graph_height * 3)
             .try_into()
             .unwrap()
     ];
+    let remove_clientread = if show_clientread.as_str() == "Y" {
+        false
+    } else {
+        true
+    };
     match plot_1.as_str() {
-        "ash_wait_type" => create_ash_wait_type_plot(&mut buffer),
-        "ash_wait_event" => create_ash_wait_event_plot(&mut buffer),
-        "ash_wait_query" => create_ash_wait_event_and_queryid_overview(&mut buffer),
+        "ash_wait_type" => create_ash_wait_type_plot(&mut buffer, remove_clientread),
+        "ash_wait_event" => create_ash_wait_event_plot(&mut buffer, remove_clientread),
+        "ash_wait_query" => {
+            create_ash_wait_event_and_queryid_overview(&mut buffer, remove_clientread)
+        }
         "wal_io_times" => create_wait_event_type_and_wal_io_plot(&mut buffer),
         "wal_size" => create_wait_event_type_and_wal_size_plot(&mut buffer),
         "io_latency" => create_wait_event_type_and_io_latency_plot(&mut buffer),
         "io_bandwidth" => create_wait_event_type_and_io_bandwidth_plot(&mut buffer),
         "iops" => create_iops_plot(&mut buffer),
         "xid_age" => create_xid_age_plot(&mut buffer),
-        "we_qid_q" => create_wait_events_and_queryid_and_query(&mut buffer),
-        "ash_wait_query_by_queryid" => create_ash_wait_query_by_queryid(&mut buffer, queryid),
-        "ash_wait_query_by_query" => create_ash_wait_query_by_query(&mut buffer, queryid),
+        "we_qid_q" => create_wait_events_and_queryid_and_query(&mut buffer, remove_clientread),
+        "ash_wait_query_by_queryid" => {
+            create_ash_wait_query_by_queryid(&mut buffer, queryid, remove_clientread)
+        }
+        "ash_wait_query_by_query" => {
+            create_ash_wait_query_by_query(&mut buffer, queryid, remove_clientread)
+        }
         unknown => {
             println!("handler plotter: unknown request: {}", unknown);
             todo!()
@@ -181,7 +228,11 @@ pub async fn handler_plotter(Path((plot_1, queryid)): Path<(String, String)>) ->
     cursor.into_inner()
 }
 
-pub fn create_ash_wait_query_by_queryid(buffer: &mut [u8], queryid: String) {
+pub fn create_ash_wait_query_by_queryid(
+    buffer: &mut [u8],
+    queryid: String,
+    remove_clientread: bool,
+) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((2, 1));
@@ -192,38 +243,64 @@ pub fn create_ash_wait_query_by_queryid(buffer: &mut [u8], queryid: String) {
         &queryid.parse::<i64>().unwrap(),
         &false,
         "",
+        remove_clientread,
     );
     waits_by_query_text(
         &mut multi_backend,
         1,
         &true,
         &queryid.parse::<i64>().unwrap(),
+        remove_clientread,
     );
 }
-pub fn create_ash_wait_query_by_query(buffer: &mut [u8], query: String) {
+pub fn create_ash_wait_query_by_query(buffer: &mut [u8], query: String, remove_clientread: bool) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((1, 1));
-    wait_event_plot(&mut multi_backend, 0, &false, &0_i64, &true, &query);
+    wait_event_plot(
+        &mut multi_backend,
+        0,
+        &false,
+        &0_i64,
+        &true,
+        &query,
+        remove_clientread,
+    );
 }
-pub fn create_ash_wait_type_plot(buffer: &mut [u8]) {
+pub fn create_ash_wait_type_plot(buffer: &mut [u8], remove_clientread: bool) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((1, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
+    wait_event_type_plot(&mut multi_backend, 0, remove_clientread);
 }
-pub fn create_ash_wait_event_plot(buffer: &mut [u8]) {
+pub fn create_ash_wait_event_plot(buffer: &mut [u8], remove_clientread: bool) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((1, 1));
-    wait_event_plot(&mut multi_backend, 0, &false, &0_i64, &false, "");
+    wait_event_plot(
+        &mut multi_backend,
+        0,
+        &false,
+        &0_i64,
+        &false,
+        "",
+        remove_clientread,
+    );
 }
-pub fn create_ash_wait_event_and_queryid_overview(buffer: &mut [u8]) {
+pub fn create_ash_wait_event_and_queryid_overview(buffer: &mut [u8], remove_clientread: bool) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_plot(&mut multi_backend, 0, &false, &0_i64, &false, "");
-    waits_by_query_id(&mut multi_backend, 1, &false, &0_i64);
+    wait_event_plot(
+        &mut multi_backend,
+        0,
+        &false,
+        &0_i64,
+        &false,
+        "",
+        remove_clientread,
+    );
+    waits_by_query_id(&mut multi_backend, 1, &false, &0_i64, remove_clientread);
 }
 pub fn create_xid_age_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
@@ -231,19 +308,19 @@ pub fn create_xid_age_plot(buffer: &mut [u8]) {
     let mut multi_backend = backend.split_evenly((1, 1));
     xid_age(&mut multi_backend, 0);
 }
-pub fn create_wait_events_and_queryid_and_query(buffer: &mut [u8]) {
+pub fn create_wait_events_and_queryid_and_query(buffer: &mut [u8], remove_clientread: bool) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((3, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
-    waits_by_query_id(&mut multi_backend, 1, &false, &0_i64);
-    show_queries(&mut multi_backend, 2);
+    wait_event_type_plot(&mut multi_backend, 0, remove_clientread);
+    waits_by_query_id(&mut multi_backend, 1, &false, &0_i64, remove_clientread);
+    show_queries(&mut multi_backend, 2, remove_clientread);
 }
 pub fn create_wait_event_type_and_io_bandwidth_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_plot(&mut multi_backend, 0, &false, &0_i64, &false, "");
+    wait_event_plot(&mut multi_backend, 0, &false, &0_i64, &false, "", true);
     io_bandwidth(&mut multi_backend, 1);
 }
 pub fn create_iops_plot(buffer: &mut [u8]) {
@@ -257,20 +334,20 @@ pub fn create_wait_event_type_and_io_latency_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
+    wait_event_type_plot(&mut multi_backend, 0, true);
     io_times(&mut multi_backend, 1);
 }
 pub fn create_wait_event_type_and_wal_io_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
+    wait_event_type_plot(&mut multi_backend, 0, true);
     wal_io_times(&mut multi_backend, 1);
 }
 pub fn create_wait_event_type_and_wal_size_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
         .into_drawing_area();
     let mut multi_backend = backend.split_evenly((2, 1));
-    wait_event_type_plot(&mut multi_backend, 0);
+    wait_event_type_plot(&mut multi_backend, 0, true);
     wal_size(&mut multi_backend, 1);
 }
