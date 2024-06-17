@@ -20,12 +20,16 @@ use crate::{
 
 mod io;
 mod query;
+mod transactions;
+mod tuples;
 mod wait_events;
 mod wal;
 mod xid_age;
 
 pub use io::{io_bandwidth, io_times};
 pub use query::{show_queries, show_queries_html};
+pub use transactions::transactions;
+pub use tuples::tuples_processed;
 pub use wait_events::{wait_event_plot, wait_event_type_plot};
 pub use wal::{wal_io_times, wal_size};
 pub use xid_age::xid_age;
@@ -117,9 +121,13 @@ pub async fn root_handler() -> Html<String> {
      <li><a href="/handler/io_bandwidth/x" target="right">IO bandwidth</a></li>
      <li><a href="/handler/iops/x" target="right">IOPS</a></li>
      <li><a href="/handler/xid_age/x" target="right">XID Age</a></li>
+     <li><a href="/handler/transactions/Y" target="right">Transactions</a></li>
+     <li><a href="/handler/tuples/Y" target="right">Tuples</a></li>
      <li><a href="/handler/ash_wait_type/N" target="right">ASH by wait type (no clientread)</a></li>
      <li><a href="/handler/ash_wait_event/N" target="right">ASH by wait event (no clientread)</a></li>
      <li><a href="/dual_handler/ash_wait_query/all_queries/N" target="right">ASH and Queries (no clientread)</a></li>
+     <li><a href="/handler/transactions/N" target="right">Transactions (no clientread)</a></li>
+     <li><a href="/handler/tuples/N" target="right">Tuples (no clientread)</a></li>
     </nav>
    </div>
    <div class = "column_right">
@@ -208,6 +216,8 @@ pub async fn handler_plotter(
         "io_bandwidth" => create_wait_event_type_and_io_bandwidth_plot(&mut buffer),
         "iops" => create_iops_plot(&mut buffer),
         "xid_age" => create_xid_age_plot(&mut buffer),
+        "transactions" => create_wait_event_and_transactions_plot(&mut buffer, remove_clientread),
+        "tuples" => create_wait_event_and_tuples_plot(&mut buffer, remove_clientread),
         "we_qid_q" => create_wait_events_and_queryid_and_query(&mut buffer, remove_clientread),
         "ash_wait_query_by_queryid" => {
             create_ash_wait_query_by_queryid(&mut buffer, queryid, remove_clientread)
@@ -301,6 +311,36 @@ pub fn create_ash_wait_event_and_queryid_overview(buffer: &mut [u8], remove_clie
         remove_clientread,
     );
     waits_by_query_id(&mut multi_backend, 1, &false, &0_i64, remove_clientread);
+}
+pub fn create_wait_event_and_transactions_plot(buffer: &mut [u8], remove_clientread: bool) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((2, 1));
+    wait_event_plot(
+        &mut multi_backend,
+        0,
+        &false,
+        &0_i64,
+        &false,
+        "",
+        remove_clientread,
+    );
+    transactions(&mut multi_backend, 1);
+}
+pub fn create_wait_event_and_tuples_plot(buffer: &mut [u8], remove_clientread: bool) {
+    let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
+        .into_drawing_area();
+    let mut multi_backend = backend.split_evenly((2, 1));
+    wait_event_plot(
+        &mut multi_backend,
+        0,
+        &false,
+        &0_i64,
+        &false,
+        "",
+        remove_clientread,
+    );
+    tuples_processed(&mut multi_backend, 1);
 }
 pub fn create_xid_age_plot(buffer: &mut [u8]) {
     let backend = BitMapBackend::with_buffer(buffer, (ARGS.graph_width, ARGS.graph_height))
