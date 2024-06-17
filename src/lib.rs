@@ -89,8 +89,8 @@ pub struct Opts {
     )]
     pub graph_height: u32,
     /// Read history file(s), don't do active fetching
-    #[arg(short = 'r', long, value_name = "read archives")]
-    pub read: Option<String>,
+    #[arg(short = 'r', long, value_name = "read archives", num_args(1..))]
+    pub read: Option<Vec<String>>,
     /// Connection specification
     #[arg(
         short = 'c',
