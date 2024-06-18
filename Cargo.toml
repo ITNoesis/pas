@@ -10,6 +10,7 @@ description = "A utility to obtain statistics from a postgres database cluster."
 [dependencies]
 anyhow = "1.0.86"
 axum = "0.7.5"
+axum_session = "0.14.0"
 base64 = "0.22.1"
 bigdecimal = "0.4.4"
 bounded-vec-deque = "0.1.1"

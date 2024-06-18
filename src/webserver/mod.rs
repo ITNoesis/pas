@@ -1,5 +1,6 @@
 use anyhow::Result;
 use axum::{extract::Path, response::Html, response::IntoResponse, routing::get, Router};
+use axum_session::{SessionConfig, SessionLayer, SessionNullPool, SessionStore};
 use image::{DynamicImage, ImageFormat};
 use io::iops;
 use log::debug;
@@ -54,6 +55,11 @@ pub fn wait_type_color(wait_event_type: &str) -> RGBColor {
 }
 
 pub async fn webserver_main() -> Result<()> {
+    let session_config = SessionConfig::default().with_table_name("session");
+    let session_store = SessionStore::<SessionNullPool>::new(None, session_config)
+        .await
+        .unwrap();
+
     let app = Router::new()
         .route("/handler/:plot_1/:show_clientread", get(handler_1_html))
         .route(
@@ -72,7 +78,8 @@ pub async fn webserver_main() -> Result<()> {
             "/plotter/:plot_1/:queryid/:show_clientread",
             get(handler_plotter),
         )
-        .route("/", get(root_handler));
+        .route("/", get(root_handler))
+        .layer(SessionLayer::new(session_store));
     let listener =
         tokio::net::TcpListener::bind(format!("0.0.0.0:{}", ARGS.webserver_port)).await?;
     axum::serve(listener, app.into_make_service()).await?;
