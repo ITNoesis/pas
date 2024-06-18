@@ -21,6 +21,16 @@ pub struct PgStatDatabaseSum {
     pub tup_deleted_ps: f64,
     pub blk_read_time_ps: f64,
     pub blk_write_time_ps: f64,
+    pub numbackends: f64,
+    pub conflicts_delta: f64,
+    pub temp_files: f64,
+    pub temp_bytes: f64,
+    pub deadlocks_delta: f64,
+    pub checksum_failures_delta: f64,
+    pub sessions: f64,
+    pub sessions_abandoned: f64,
+    pub sessions_fatal: f64,
+    pub sessions_killed: f64,
 }
 
 impl PgStatDatabaseSum {
@@ -125,6 +135,123 @@ impl PgStatDatabaseSum {
                 .fold(0_f64, |sum, b| sum + (b as f64)),
         )
         .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.numbackends",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.numbackends)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.conflicts",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.conflicts)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.temp_files",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.temp_files)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.temp_bytes",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.temp_bytes)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.deadlocks",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.deadlocks)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.checksum_failures",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.checksum_failures.unwrap_or_default())
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.session_time",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.session_time)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.active_time",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.active_time)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.idle_in_transaction_time",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.idle_in_transaction_time)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.sessions",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.sessions)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.sessions_abandoned",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.sessions_abandoned)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.sessions_fatal",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.sessions_fatal)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
+        DeltaTable::add_or_update(
+            "pg_stat_database.sessions_killed",
+            pg_stat_database_timestamp,
+            pg_stat_database
+                .iter()
+                .map(|r| r.sessions_killed)
+                .fold(0_f64, |sum, b| sum + (b as f64)),
+        )
+        .await;
         // only add to DATA if updated_value is true, which means that there have been two
         // additions, and thus a DELTA (difference) is calculated.
         if DELTATABLE
@@ -203,6 +330,66 @@ impl PgStatDatabaseSum {
                         .get("pg_stat_database.blk_write_time")
                         .unwrap()
                         .per_second_value,
+                    numbackends: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_stat_database.numbackends")
+                        .unwrap()
+                        .last_value,
+                    conflicts_delta: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_stat_database.conflicts")
+                        .unwrap()
+                        .delta_value,
+                    temp_files: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_stat_database.temp_files")
+                        .unwrap()
+                        .last_value,
+                    temp_bytes: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_stat_database.temp_bytes")
+                        .unwrap()
+                        .last_value,
+                    deadlocks_delta: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_stat_database.deadlocks")
+                        .unwrap()
+                        .delta_value,
+                    checksum_failures_delta: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_stat_database.checksum_failures")
+                        .unwrap()
+                        .delta_value,
+                    sessions: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_stat_database.sessions")
+                        .unwrap()
+                        .last_value,
+                    sessions_abandoned: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_stat_database.sessions_abandoned")
+                        .unwrap()
+                        .last_value,
+                    sessions_fatal: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_stat_database.sessions_fatal")
+                        .unwrap()
+                        .last_value,
+                    sessions_killed: DELTATABLE
+                        .read()
+                        .await
+                        .get("pg_stat_database.sessions_killed")
+                        .unwrap()
+                        .last_value,
                 },
             ));
         }
