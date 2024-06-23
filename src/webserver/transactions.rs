@@ -4,6 +4,7 @@ use crate::{
     LABEL_AREA_SIZE_BOTTOM, LABEL_AREA_SIZE_LEFT, LABEL_AREA_SIZE_RIGHT, MESH_STYLE_FONT,
     MESH_STYLE_FONT_SIZE,
 };
+use chrono::{DateTime, Local};
 use futures::executor;
 use plotters::backend::RGBPixel;
 use plotters::chart::SeriesLabelPosition::UpperLeft;
@@ -13,21 +14,44 @@ use plotters::prelude::*;
 pub fn transactions(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
 ) {
     let pg_stat_database = executor::block_on(DATA.pg_stat_database_sum.read());
-    let start_time = pg_stat_database
-        .iter()
-        .map(|(timestamp, _)| timestamp)
-        .min()
-        .unwrap();
-    let end_time = pg_stat_database
-        .iter()
-        .map(|(timestamp, _)| timestamp)
-        .max()
-        .unwrap();
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        pg_stat_database
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .min()
+            .unwrap_or_default()
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        pg_stat_database
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .max()
+            .unwrap_or_default()
+    };
+    /*
+        let start_time = pg_stat_database
+            .iter()
+            .map(|(timestamp, _)| timestamp)
+            .min()
+            .unwrap();
+        let end_time = pg_stat_database
+            .iter()
+            .map(|(timestamp, _)| timestamp)
+            .max()
+            .unwrap();
+    */
     let low_value = 0_f64;
     let high_value = pg_stat_database
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, d)| d.xact_commit_ps + d.xact_rollback_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default()
@@ -42,7 +66,7 @@ pub fn transactions(
             "Transactions",
             (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE),
         )
-        .build_cartesian_2d(*start_time..*end_time, low_value..high_value)
+        .build_cartesian_2d(final_start_time..final_end_time, low_value..high_value)
         .unwrap();
     contextarea
         .configure_mesh()
@@ -75,12 +99,14 @@ pub fn transactions(
         ));
     let min_commit = pg_stat_database
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, d)| d.xact_commit_ps > 0_f64)
         .map(|(_, d)| d.xact_commit_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_commit = pg_stat_database
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, d)| d.xact_commit_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -88,6 +114,9 @@ pub fn transactions(
         .draw_series(
             pg_stat_database
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, d)| d.xact_commit_ps > 0_f64)
                 .map(|(timestamp, d)| {
                     Circle::new((*timestamp, d.xact_commit_ps), 3, GREEN.filled())
@@ -106,12 +135,14 @@ pub fn transactions(
         .legend(move |(x, y)| Circle::new((x, y), 3, GREEN.filled()));
     let min_rollback = pg_stat_database
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, d)| d.xact_rollback_ps > 0_f64)
         .map(|(_, d)| d.xact_rollback_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_rollback = pg_stat_database
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, d)| d.xact_rollback_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -119,6 +150,9 @@ pub fn transactions(
         .draw_series(
             pg_stat_database
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, d)| d.xact_rollback_ps > 0_f64)
                 .map(|(timestamp, d)| {
                     Circle::new((*timestamp, d.xact_rollback_ps), 3, RED.filled())
@@ -138,12 +172,14 @@ pub fn transactions(
 
     let min_total = pg_stat_database
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, d)| d.xact_commit_ps + d.xact_rollback_ps > 0_f64)
         .map(|(_, d)| d.xact_commit_ps + d.xact_rollback_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_total = pg_stat_database
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, d)| d.xact_commit_ps + d.xact_rollback_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -151,6 +187,9 @@ pub fn transactions(
         .draw_series(LineSeries::new(
             pg_stat_database
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .map(|(timestamp, d)| (*timestamp, d.xact_commit_ps + d.xact_rollback_ps)),
             BLACK,
         ))

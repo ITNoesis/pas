@@ -1,5 +1,6 @@
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use chrono::{DateTime, Local};
+use log::debug;
 use std::collections::BTreeMap;
 use std::ops::Bound::Included;
 
@@ -20,6 +21,8 @@ pub fn wait_event_type_plot(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
     exclude_clientread: bool,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
 ) {
     #[derive(Debug, Default)]
     struct DynamicDateAndWaits {
@@ -73,16 +76,28 @@ pub fn wait_event_type_plot(
         }
     }
 
-    let start_time = timestamp_and_waits
-        .iter()
-        .map(|v| v.timestamp)
-        .min()
-        .unwrap_or_default();
-    let end_time = timestamp_and_waits
-        .iter()
-        .map(|v| v.timestamp)
-        .max()
-        .unwrap_or_default();
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        timestamp_and_waits
+            .iter()
+            .map(|v| v.timestamp)
+            .min()
+            .unwrap_or_default()
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        timestamp_and_waits
+            .iter()
+            .map(|v| v.timestamp)
+            .max()
+            .unwrap_or_default()
+    };
+    debug!(
+        "start_time: {:?}, final_start_time: {:?}, end_time: {:?}, final_end_time: {:?}",
+        start_time, final_start_time, end_time, final_end_time
+    );
     let low_value = 0_usize;
     let high_value = max_active;
 
@@ -96,7 +111,7 @@ pub fn wait_event_type_plot(
             "Active sessions",
             (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE),
         )
-        .build_cartesian_2d(start_time..end_time, low_value..high_value)
+        .build_cartesian_2d(final_start_time..final_end_time, low_value..high_value)
         .unwrap();
     contextarea
         .configure_mesh()
@@ -133,18 +148,21 @@ pub fn wait_event_type_plot(
     for wait_event in wait_event_counter.keys() {
         contextarea
             .draw_series(AreaSeries::new(
-                timestamp_and_waits.iter().map(|v| {
-                    (
-                        v.timestamp,
-                        v.waits
-                            .range::<str, _>((
-                                Included(wait_event.as_str()),
-                                Included(last_key.as_str()),
-                            ))
-                            .map(|(_, v)| *v as isize)
-                            .sum::<isize>() as usize,
-                    )
-                }),
+                timestamp_and_waits
+                    .iter()
+                    .filter(|v| v.timestamp >= final_start_time && v.timestamp <= final_end_time)
+                    .map(|v| {
+                        (
+                            v.timestamp,
+                            v.waits
+                                .range::<str, _>((
+                                    Included(wait_event.as_str()),
+                                    Included(last_key.as_str()),
+                                ))
+                                .map(|(_, v)| *v as isize)
+                                .sum::<isize>() as usize,
+                        )
+                    }),
                 0,
                 //Palette99::pick(color_number),
                 wait_type_color(wait_event),
@@ -184,6 +202,8 @@ pub fn wait_event_plot(
     query_filter: &bool,
     query: &str,
     exclude_clientread: bool,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
 ) {
     #[derive(Debug, Default)]
     struct DynamicDateAndWaits {
@@ -195,7 +215,31 @@ pub fn wait_event_plot(
     let mut wait_event_counter: BTreeMap<String, usize> = BTreeMap::new();
     let mut timestamp_and_waits: Vec<DynamicDateAndWaits> = Vec::new();
     let mut max_active = 0;
-    for (timestamp, per_sample_vector) in pg_stat_activity.iter() {
+
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .min()
+            .unwrap_or_default()
+    };
+
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .max()
+            .unwrap_or_default()
+    };
+
+    for (timestamp, per_sample_vector) in pg_stat_activity
+        .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
+    {
         let mut current_timestamp_data = DynamicDateAndWaits {
             timestamp: *timestamp,
             ..Default::default()
@@ -253,16 +297,18 @@ pub fn wait_event_plot(
         }
     }
 
-    let start_time = timestamp_and_waits
-        .iter()
-        .map(|v| v.timestamp)
-        .min()
-        .unwrap_or_default();
-    let end_time = timestamp_and_waits
-        .iter()
-        .map(|v| v.timestamp)
-        .max()
-        .unwrap_or_default();
+    /*
+        let start_time = timestamp_and_waits
+            .iter()
+            .map(|v| v.timestamp)
+            .min()
+            .unwrap_or_default();
+        let end_time = timestamp_and_waits
+            .iter()
+            .map(|v| v.timestamp)
+            .max()
+            .unwrap_or_default();
+    */
     let low_value = 0_usize;
     let high_value = max_active;
 
@@ -276,7 +322,7 @@ pub fn wait_event_plot(
             "Active sessions",
             (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE),
         )
-        .build_cartesian_2d(start_time..end_time, low_value..high_value)
+        .build_cartesian_2d(final_start_time..final_end_time, low_value..high_value)
         .unwrap();
     contextarea
         .configure_mesh()

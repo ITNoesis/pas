@@ -4,6 +4,7 @@ use crate::{
     LABEL_AREA_SIZE_BOTTOM, LABEL_AREA_SIZE_LEFT, LABEL_AREA_SIZE_RIGHT, MESH_STYLE_FONT,
     MESH_STYLE_FONT_SIZE,
 };
+use chrono::{DateTime, Local};
 use full_palette::{GREEN_800, LIGHTBLUE, RED_300};
 use futures::executor;
 use human_bytes::human_bytes;
@@ -15,6 +16,8 @@ use plotters::prelude::*;
 pub fn wal_io_times(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
 ) {
     let wal_events = executor::block_on(DATA.pg_stat_wal_sum.read());
     let bgwriter_events = executor::block_on(DATA.pg_stat_bgwriter_sum.read());
@@ -38,11 +41,23 @@ pub fn wal_io_times(
         .map(|(timestamp, _)| timestamp)
         .max()
         .unwrap();
-    let start_time = wal_start_time.min(bgwriter_start_time);
-    let end_time = wal_end_time.min(bgwriter_end_time);
+    let found_start_time = wal_start_time.min(bgwriter_start_time);
+    let found_end_time = wal_end_time.min(bgwriter_end_time);
+
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        *found_start_time
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        *found_end_time
+    };
     let low_value_f64 = 0_f64;
     let high_value_write = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, w)| {
             if w.wal_buffers_full_ps + w.wal_write_ps == 0_f64 {
                 0_f64
@@ -54,6 +69,7 @@ pub fn wal_io_times(
         .unwrap_or_default();
     let high_value_sync = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, w)| {
             if w.wal_sync_ps == 0_f64 {
                 0_f64
@@ -74,7 +90,7 @@ pub fn wal_io_times(
             "Wal IO latency",
             (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE),
         )
-        .build_cartesian_2d(*start_time..*end_time, low_value_f64..high_value)
+        .build_cartesian_2d(final_start_time..final_end_time, low_value_f64..high_value)
         .unwrap();
     contextarea
         .configure_mesh()
@@ -91,6 +107,9 @@ pub fn wal_io_times(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.checkpoints_timed > 0_f64)
                 .map(|(timestamp, _)| TriangleMarker::new((*timestamp, high_value), 5, GREEN_800)),
         )
@@ -100,6 +119,9 @@ pub fn wal_io_times(
             "checkpoints_timed",
             bgwriter_events
                 .iter()
+                .filter(
+                    |(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time
+                )
                 .map(|(_, b)| b.checkpoints_timed)
                 .sum::<f64>()
         ))
@@ -109,6 +131,9 @@ pub fn wal_io_times(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.checkpoints_req > 0_f64)
                 .map(|(timestamp, _)| TriangleMarker::new((*timestamp, high_value), 5, RED)),
         )
@@ -143,6 +168,7 @@ pub fn wal_io_times(
 
     let min_write = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| {
             w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
         })
@@ -151,6 +177,7 @@ pub fn wal_io_times(
         .unwrap_or_default();
     let max_write = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| {
             w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
         })
@@ -161,6 +188,9 @@ pub fn wal_io_times(
         .draw_series(
             wal_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, w)| {
                     w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
                 })
@@ -193,12 +223,14 @@ pub fn wal_io_times(
 
     let min_sync = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
         .map(|(_, w)| w.wal_sync_time_ps / w.wal_sync_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_sync = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
         .map(|(_, w)| w.wal_sync_time_ps / w.wal_sync_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
@@ -207,6 +239,9 @@ pub fn wal_io_times(
         .draw_series(
             wal_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
                 .map(|(timestamp, w)| {
                     Circle::new(
@@ -244,6 +279,8 @@ pub fn wal_io_times(
 pub fn wal_size(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
 ) {
     let bgwriter_events = executor::block_on(DATA.pg_stat_bgwriter_sum.read());
     let wal_events = executor::block_on(DATA.pg_stat_wal_sum.read());
@@ -267,11 +304,22 @@ pub fn wal_size(
         .map(|(timestamp, _)| timestamp)
         .max()
         .unwrap();
-    let start_time = wal_start_time.min(bgwriter_start_time);
-    let end_time = wal_end_time.min(bgwriter_end_time);
+    let found_start_time = wal_start_time.min(bgwriter_start_time);
+    let found_end_time = wal_end_time.min(bgwriter_end_time);
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        *found_start_time
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        *found_end_time
+    };
     let low_value_f64 = 0_f64;
     let high_value_bytes = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, w)| w.wal_bytes_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default()
@@ -283,7 +331,10 @@ pub fn wal_size(
         .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
         .set_label_area_size(LabelAreaPosition::Right, LABEL_AREA_SIZE_RIGHT)
         .caption("Wal IO size", (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE))
-        .build_cartesian_2d(*start_time..*end_time, low_value_f64..high_value_bytes)
+        .build_cartesian_2d(
+            final_start_time..final_end_time,
+            low_value_f64..high_value_bytes,
+        )
         .unwrap();
     contextarea
         .configure_mesh()
@@ -301,6 +352,9 @@ pub fn wal_size(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.checkpoints_timed > 0_f64)
                 .map(|(timestamp, _)| {
                     TriangleMarker::new((*timestamp, high_value_bytes), 5, GREEN_800)
@@ -321,6 +375,9 @@ pub fn wal_size(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.checkpoints_req > 0_f64)
                 .map(|(timestamp, _)| {
                     TriangleMarker::new((*timestamp, high_value_bytes), 5, RED_300)
@@ -357,12 +414,14 @@ pub fn wal_size(
     //
     let min_write = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| w.wal_bytes_ps > 0_f64)
         .map(|(_, w)| w.wal_bytes_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_write = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, w)| w.wal_bytes_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -370,6 +429,9 @@ pub fn wal_size(
         .draw_series(
             wal_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, w)| w.wal_bytes_ps > 0_f64)
                 .map(|(timestamp, w)| Circle::new((*timestamp, w.wal_bytes_ps), 3, BLACK.filled())),
         )

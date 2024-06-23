@@ -4,6 +4,7 @@ use crate::{
     LABEL_AREA_SIZE_BOTTOM, LABEL_AREA_SIZE_LEFT, LABEL_AREA_SIZE_RIGHT, MESH_STYLE_FONT,
     MESH_STYLE_FONT_SIZE,
 };
+use chrono::{DateTime, Local};
 use full_palette::{GREY_700, LIGHTBLUE};
 use futures::executor;
 use human_bytes::human_bytes;
@@ -17,6 +18,8 @@ use plotters::{coord::Shift, style::full_palette::RED_300};
 pub fn iops(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
 ) {
     let wal_events = executor::block_on(DATA.pg_stat_wal_sum.read());
     let database_events = executor::block_on(DATA.pg_stat_database_sum.read());
@@ -51,15 +54,33 @@ pub fn iops(
         .map(|(timestamp, _)| timestamp)
         .max()
         .unwrap();
-    let start_time = wal_start_time
+    let found_start_time = wal_start_time
         .min(database_start_time)
         .min(bgwriter_start_time);
-    let end_time = wal_end_time.max(database_end_time).max(bgwriter_end_time);
+    let found_end_time = wal_end_time.max(database_end_time).max(bgwriter_end_time);
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        *found_start_time
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        *found_end_time
+    };
     let low_value_f64 = 0_f64;
     let high_value_io = wal_events
         .iter()
         .zip(bgwriter_events.iter())
         .zip(database_events.iter())
+        .filter(|(((timestamp_w, _), (timestamp_b, _)), (timestamp_d, _))| {
+            *timestamp_w >= final_start_time
+                && *timestamp_w <= final_end_time
+                && *timestamp_b >= final_start_time
+                && *timestamp_b <= final_end_time
+                && *timestamp_d >= final_start_time
+                && *timestamp_d <= final_end_time
+        })
         .map(|(((_, w), (_, b)), (_, d))| {
             w.wal_buffers_full_ps
                 + w.wal_write_ps
@@ -72,6 +93,7 @@ pub fn iops(
         .unwrap_or_default();
     let high_value_wal_sync = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| w.wal_sync_ps > 0_f64)
         .map(|(_, w)| w.wal_sync_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
@@ -84,7 +106,7 @@ pub fn iops(
         .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
         .set_label_area_size(LabelAreaPosition::Right, LABEL_AREA_SIZE_RIGHT)
         .caption("IOPS", (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE))
-        .build_cartesian_2d(*start_time..*end_time, low_value_f64..high_value)
+        .build_cartesian_2d(final_start_time..final_end_time, low_value_f64..high_value)
         .unwrap();
     contextarea
         .configure_mesh()
@@ -101,6 +123,9 @@ pub fn iops(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.checkpoints_timed > 0_f64)
                 .map(|(timestamp, _)| TriangleMarker::new((*timestamp, high_value), 5, GREEN_800)),
         )
@@ -110,6 +135,9 @@ pub fn iops(
             "checkpoints_timed",
             bgwriter_events
                 .iter()
+                .filter(
+                    |(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time
+                )
                 .map(|(_, b)| b.checkpoints_timed)
                 .sum::<f64>()
         ))
@@ -119,6 +147,9 @@ pub fn iops(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.checkpoints_req > 0_f64)
                 .map(|(timestamp, _)| TriangleMarker::new((*timestamp, high_value), 5, RED_300)),
         )
@@ -128,6 +159,9 @@ pub fn iops(
             "checkpoints_req",
             bgwriter_events
                 .iter()
+                .filter(
+                    |(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time
+                )
                 .map(|(_, b)| b.checkpoints_req)
                 .sum::<f64>()
         ))
@@ -154,12 +188,14 @@ pub fn iops(
     // wal buffers full
     let min_wal_buffers_full = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| w.wal_buffers_full_ps > 0_f64)
         .map(|(_, w)| w.wal_buffers_full_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_wal_buffers_full = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, w)| w.wal_buffers_full_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -167,6 +203,9 @@ pub fn iops(
         .draw_series(
             wal_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, w)| w.wal_buffers_full_ps > 0_f64)
                 .map(|(timestamp, w)| {
                     Circle::new((*timestamp, w.wal_buffers_full_ps), 6, PURPLE.filled())
@@ -186,12 +225,14 @@ pub fn iops(
     // wal write
     let min_wal_write = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| w.wal_write_ps > 0_f64)
         .map(|(_, w)| w.wal_write_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_wal_write = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, w)| w.wal_write_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -199,6 +240,9 @@ pub fn iops(
         .draw_series(
             wal_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, w)| w.wal_write_ps > 0_f64)
                 .map(|(timestamp, w)| {
                     Circle::new((*timestamp, w.wal_write_ps), 5, GREY_700.filled())
@@ -246,12 +290,14 @@ pub fn iops(
     // database blocks read
     let min_blocks_read = database_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, d)| d.blks_read_ps > 0_f64)
         .map(|(_, d)| d.blks_read_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_blocks_read = database_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, d)| d.blks_read_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -259,6 +305,9 @@ pub fn iops(
         .draw_series(
             database_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, d)| d.blks_read_ps > 0_f64)
                 .map(|(timestamp, d)| Circle::new((*timestamp, d.blks_read_ps), 4, GREEN.filled())),
         )
@@ -276,12 +325,14 @@ pub fn iops(
     // bgwriter buffers written backend
     let min_buf_backend = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, b)| b.buffers_backend_ps > 0_f64)
         .map(|(_, b)| b.buffers_backend_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_buf_backend = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, b)| b.buffers_backend_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -289,6 +340,9 @@ pub fn iops(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.buffers_backend_ps > 0_f64)
                 .map(|(timestamp, b)| {
                     Circle::new((*timestamp, b.buffers_backend_ps), 3, RED.filled())
@@ -308,12 +362,14 @@ pub fn iops(
     // bgwriter buffers clean
     let min_buf_clean = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, b)| b.buffers_clean_ps > 0_f64)
         .map(|(_, b)| b.buffers_clean_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_buf_clean = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, b)| b.buffers_clean_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -321,6 +377,9 @@ pub fn iops(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.buffers_clean_ps > 0_f64)
                 .map(|(timestamp, b)| {
                     Circle::new((*timestamp, b.buffers_clean_ps), 2, LIGHTBLUE.filled())
@@ -340,12 +399,14 @@ pub fn iops(
     // bgwriter buffers checkpoint
     let min_buf_checkpoint = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, b)| b.buffers_checkpoint_ps > 0_f64)
         .map(|(_, b)| b.buffers_checkpoint_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_buf_checkpoint = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, b)| b.buffers_checkpoint_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -353,6 +414,9 @@ pub fn iops(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.buffers_checkpoint_ps > 0_f64)
                 .map(|(timestamp, b)| {
                     Circle::new((*timestamp, b.buffers_checkpoint_ps), 2, BLUE.filled())
@@ -374,6 +438,14 @@ pub fn iops(
         .iter()
         .zip(bgwriter_events.iter())
         .zip(database_events.iter())
+        .filter(|(((timestamp_w, _), (timestamp_b, _)), (timestamp_d, _))| {
+            *timestamp_w >= final_start_time
+                && *timestamp_w <= final_end_time
+                && *timestamp_b >= final_start_time
+                && *timestamp_b <= final_end_time
+                && *timestamp_d >= final_start_time
+                && *timestamp_d <= final_end_time
+        })
         .map(|(((_, w), (_, b)), (_, d))| {
             w.wal_buffers_full_ps
                 + w.wal_write_ps
@@ -388,6 +460,14 @@ pub fn iops(
         .iter()
         .zip(bgwriter_events.iter())
         .zip(database_events.iter())
+        .filter(|(((timestamp_w, _), (timestamp_b, _)), (timestamp_d, _))| {
+            *timestamp_w >= final_start_time
+                && *timestamp_w <= final_end_time
+                && *timestamp_b >= final_start_time
+                && *timestamp_b <= final_end_time
+                && *timestamp_d >= final_start_time
+                && *timestamp_d <= final_end_time
+        })
         .map(|(((_, w), (_, b)), (_, d))| {
             w.wal_buffers_full_ps
                 + w.wal_write_ps
@@ -404,6 +484,14 @@ pub fn iops(
                 .iter()
                 .zip(bgwriter_events.iter())
                 .zip(database_events.iter())
+                .filter(|(((timestamp_w, _), (timestamp_b, _)), (timestamp_d, _))| {
+                    *timestamp_w >= final_start_time
+                        && *timestamp_w <= final_end_time
+                        && *timestamp_b >= final_start_time
+                        && *timestamp_b <= final_end_time
+                        && *timestamp_d >= final_start_time
+                        && *timestamp_d <= final_end_time
+                })
                 .map(|(((timestamp, w), (_, b)), (_, d))| {
                     (
                         *timestamp,
@@ -436,144 +524,6 @@ pub fn iops(
                     .map_or(0_f64, |(_, d)| d.blks_read_ps)
         ))
         .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLACK.filled()));
-    /*
-    let high_value_io = wal_events
-        .iter()
-        .zip(bgwriter_events.iter())
-        .zip(database_events.iter())
-        .map(|(((_, w), (_, b)), (_, d))| {
-            w.wal_buffers_full_ps
-                + w.wal_write_ps
-                + b.buffers_checkpoint_ps
-                + b.buffers_clean_ps
-                + b.buffers_backend_ps
-                + d.blks_read_ps
-        })
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or_default();
-        // blocks read
-        let min_database_read = database_events
-            .iter()
-            .map(|(_, d)| {
-                if d.blks_read_ps == 0_f64 {
-                    0_f64
-                } else {
-                    d.blk_read_time_ps / d.blks_read_ps
-                }
-            })
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        let max_database_read = database_events
-            .iter()
-            .map(|(_, d)| {
-                if d.blks_read_ps == 0_f64 {
-                    0_f64
-                } else {
-                    d.blk_read_time_ps / d.blks_read_ps
-                }
-            })
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        contextarea
-            .draw_series(LineSeries::new(
-                database_events.iter().map(|(timestamp, d)| {
-                    (
-                        *timestamp,
-                        if d.blks_read_ps == 0_f64 {
-                            0_f64
-                        } else {
-                            d.blk_read_time_ps / d.blks_read_ps
-                        },
-                    )
-                }),
-                BLACK,
-            ))
-            .unwrap()
-            .label(format!(
-                "{:25} {:10.3} {:10.3} {:10.3} ms",
-                "Block read",
-                min_database_read,
-                max_database_read,
-                database_events.back().map_or(0_f64, |(_, d)| {
-                    if d.blks_read_ps == 0_f64 {
-                        0_f64
-                    } else {
-                        d.blk_read_time_ps / d.blks_read_ps
-                    }
-                },)
-            ))
-            .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], BLACK.filled()));
-        // blocks write
-        let min_database_write = database_events
-            .iter()
-            .zip(bgwriter_events.iter())
-            .map(|((_, d), (_, b))| {
-                if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps == 0_f64 {
-                    0_f64
-                } else {
-                    d.blk_write_time_ps
-                        / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
-                }
-            })
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        let max_database_write = database_events
-            .iter()
-            .zip(bgwriter_events.iter())
-            .map(|((_, d), (_, b))| {
-                if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps == 0_f64 {
-                    0_f64
-                } else {
-                    d.blk_write_time_ps
-                        / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
-                }
-            })
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        contextarea
-            .draw_series(LineSeries::new(
-                database_events
-                    .iter()
-                    .zip(bgwriter_events.iter())
-                    .map(|((timestamp, d), (_, b))| {
-                        (
-                            *timestamp,
-                            if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps
-                                == 0_f64
-                            {
-                                0_f64
-                            } else {
-                                d.blk_write_time_ps
-                                    / (b.buffers_checkpoint_ps
-                                        + b.buffers_clean_ps
-                                        + b.buffers_backend_ps)
-                            },
-                        )
-                    }),
-                RED,
-            ))
-            .unwrap()
-            .label(format!(
-                "{:25} {:10.3} {:10.3} {:10.3} ms",
-                "Block write",
-                min_database_write,
-                max_database_write,
-                database_events
-                    .iter()
-                    .zip(bgwriter_events.iter())
-                    .last()
-                    .map_or(0_f64, |((_, d), (_, b))| {
-                        if b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps == 0_f64
-                        {
-                            0_f64
-                        } else {
-                            d.blk_write_time_ps
-                                / (b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
-                        }
-                    },)
-            ))
-            .legend(move |(x, y)| Rectangle::new([(x - 3, y - 3), (x + 3, y + 3)], RED.filled()));
-    */
 
     contextarea
         .configure_series_labels()
@@ -587,6 +537,8 @@ pub fn iops(
 pub fn io_times(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
 ) {
     let wal_events = executor::block_on(DATA.pg_stat_wal_sum.read());
     let database_events = executor::block_on(DATA.pg_stat_database_sum.read());
@@ -621,25 +573,38 @@ pub fn io_times(
         .map(|(timestamp, _)| timestamp)
         .max()
         .unwrap();
-    let start_time = wal_start_time
+    let found_start_time = wal_start_time
         .min(database_start_time)
         .min(bgwriter_start_time);
-    let end_time = wal_end_time.max(database_end_time).max(bgwriter_end_time);
+    let found_end_time = wal_end_time.max(database_end_time).max(bgwriter_end_time);
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        *found_start_time
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        *found_end_time
+    };
     let low_value_f64 = 0_f64;
     let wal_high_value_write = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| w.wal_buffers_full_ps + w.wal_write_ps > 0_f64)
         .map(|(_, w)| w.wal_write_time_ps / (w.wal_buffers_full_ps + w.wal_write_ps))
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let wal_high_value_sync = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| w.wal_sync_ps > 0_f64)
         .map(|(_, w)| w.wal_sync_time_ps / w.wal_sync_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let database_high_value_read = database_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, d)| d.blks_read_ps > 0_f64)
         .map(|(_, d)| d.blk_read_time_ps / d.blks_read_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
@@ -647,6 +612,12 @@ pub fn io_times(
     let database_high_value_write = database_events
         .iter()
         .zip(bgwriter_events.iter())
+        .filter(|((timestamp_d, _), (timestamp_b, _))| {
+            *timestamp_d >= final_start_time
+                && *timestamp_d <= final_end_time
+                && *timestamp_b >= final_start_time
+                && *timestamp_b <= final_end_time
+        })
         .filter(|((_, _), (_, b))| {
             b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps > 0_f64
         })
@@ -668,7 +639,7 @@ pub fn io_times(
         .set_label_area_size(LabelAreaPosition::Bottom, LABEL_AREA_SIZE_BOTTOM)
         .set_label_area_size(LabelAreaPosition::Right, LABEL_AREA_SIZE_RIGHT)
         .caption("IO latency", (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE))
-        .build_cartesian_2d(*start_time..*end_time, low_value_f64..high_value)
+        .build_cartesian_2d(final_start_time..final_end_time, low_value_f64..high_value)
         .unwrap();
     contextarea
         .configure_mesh()
@@ -685,6 +656,9 @@ pub fn io_times(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.checkpoints_timed > 0_f64)
                 .map(|(timestamp, _)| TriangleMarker::new((*timestamp, high_value), 5, GREEN_800)),
         )
@@ -694,6 +668,9 @@ pub fn io_times(
             "checkpoints_timed",
             bgwriter_events
                 .iter()
+                .filter(
+                    |(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time
+                )
                 .map(|(_, b)| b.checkpoints_timed)
                 .sum::<f64>()
         ))
@@ -703,6 +680,9 @@ pub fn io_times(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.checkpoints_req > 0_f64)
                 .map(|(timestamp, _)| TriangleMarker::new((*timestamp, high_value), 5, RED_300)),
         )
@@ -738,6 +718,7 @@ pub fn io_times(
     // wal write
     let min_write = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| {
             w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
         })
@@ -746,6 +727,7 @@ pub fn io_times(
         .unwrap_or_default();
     let max_write = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| {
             w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
         })
@@ -756,6 +738,9 @@ pub fn io_times(
         .draw_series(
             wal_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, w)| {
                     w.wal_buffers_full_ps + w.wal_write_ps > 0_f64 && w.wal_write_time_ps > 0_f64
                 })
@@ -788,12 +773,14 @@ pub fn io_times(
     // wal sync
     let min_sync = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
         .map(|(_, w)| w.wal_sync_time_ps / w.wal_sync_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_sync = wal_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
         .map(|(_, w)| w.wal_sync_time_ps / w.wal_sync_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
@@ -802,6 +789,9 @@ pub fn io_times(
         .draw_series(
             wal_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, w)| w.wal_sync_ps > 0_f64 && w.wal_sync_time_ps > 0_f64)
                 .map(|(timestamp, w)| {
                     Circle::new((*timestamp, w.wal_sync_time_ps / w.wal_sync_ps), 3, BLUE)
@@ -825,12 +815,14 @@ pub fn io_times(
     // blocks read
     let min_database_read = database_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, d)| d.blks_read_ps > 0_f64 && d.blk_read_time_ps > 0_f64)
         .map(|(_, d)| d.blk_read_time_ps / d.blks_read_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_database_read = database_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, d)| d.blks_read_ps > 0_f64 && d.blk_read_time_ps > 0_f64)
         .map(|(_, d)| d.blk_read_time_ps / d.blks_read_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
@@ -839,6 +831,9 @@ pub fn io_times(
         .draw_series(
             database_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, d)| d.blks_read_ps > 0_f64 && d.blk_read_time_ps > 0_f64)
                 .map(|(timestamp, d)| {
                     Circle::new(
@@ -867,6 +862,12 @@ pub fn io_times(
     let min_database_write = database_events
         .iter()
         .zip(bgwriter_events.iter())
+        .filter(|((timestamp_d, _), (timestamp_b, _))| {
+            *timestamp_d >= final_start_time
+                && *timestamp_d <= final_end_time
+                && *timestamp_b >= final_start_time
+                && *timestamp_b <= final_end_time
+        })
         .filter(|((_, d), (_, b))| {
             b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps > 0_f64
                 && d.blk_write_time_ps > 0_f64
@@ -880,6 +881,12 @@ pub fn io_times(
     let max_database_write = database_events
         .iter()
         .zip(bgwriter_events.iter())
+        .filter(|((timestamp_d, _), (timestamp_b, _))| {
+            *timestamp_d >= final_start_time
+                && *timestamp_d <= final_end_time
+                && *timestamp_b >= final_start_time
+                && *timestamp_b <= final_end_time
+        })
         .filter(|((_, d), (_, b))| {
             b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps > 0_f64
                 && d.blk_write_time_ps > 0_f64
@@ -895,6 +902,12 @@ pub fn io_times(
             database_events
                 .iter()
                 .zip(bgwriter_events.iter())
+                .filter(|((timestamp_d, _), (timestamp_b, _))| {
+                    *timestamp_d >= final_start_time
+                        && *timestamp_d <= final_end_time
+                        && *timestamp_b >= final_start_time
+                        && *timestamp_b <= final_end_time
+                })
                 .filter(|((_, d), (_, b))| {
                     b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps > 0_f64
                         && d.blk_write_time_ps > 0_f64
@@ -947,6 +960,8 @@ pub fn io_times(
 pub fn io_bandwidth(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
 ) {
     let database_events = executor::block_on(DATA.pg_stat_database_sum.read());
     let bgwriter_events = executor::block_on(DATA.pg_stat_bgwriter_sum.read());
@@ -970,12 +985,28 @@ pub fn io_bandwidth(
         .map(|(timestamp, _)| timestamp)
         .max()
         .unwrap();
-    let start_time = database_start_time.min(bgwriter_start_time);
-    let end_time = database_end_time.max(bgwriter_end_time);
+    let found_start_time = database_start_time.min(bgwriter_start_time);
+    let found_end_time = database_end_time.max(bgwriter_end_time);
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        *found_start_time
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        *found_end_time
+    };
     let low_value_f64 = 0_f64;
     let high_value = database_events
         .iter()
         .zip(bgwriter_events.iter())
+        .filter(|((timestamp_d, _), (timestamp_b, _))| {
+            *timestamp_d >= final_start_time
+                && *timestamp_d <= final_end_time
+                && *timestamp_b >= final_start_time
+                && *timestamp_b <= final_end_time
+        })
         .map(|((_, d), (_, b))| {
             (d.blks_read_ps + b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps)
                 * 8192_f64
@@ -993,7 +1024,7 @@ pub fn io_bandwidth(
             "IO bandwidth (excluding WAL)",
             (CAPTION_STYLE_FONT, CAPTION_STYLE_FONT_SIZE),
         )
-        .build_cartesian_2d(*start_time..*end_time, low_value_f64..high_value)
+        .build_cartesian_2d(final_start_time..final_end_time, low_value_f64..high_value)
         .unwrap();
     contextarea
         .configure_mesh()
@@ -1029,6 +1060,9 @@ pub fn io_bandwidth(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.checkpoints_timed > 0_f64)
                 .map(|(timestamp, _)| TriangleMarker::new((*timestamp, high_value), 5, GREEN_800)),
         )
@@ -1038,6 +1072,9 @@ pub fn io_bandwidth(
             "checkpoints_timed",
             bgwriter_events
                 .iter()
+                .filter(
+                    |(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time
+                )
                 .map(|(_, b)| b.checkpoints_timed)
                 .sum::<f64>()
         ))
@@ -1047,6 +1084,9 @@ pub fn io_bandwidth(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.checkpoints_req > 0_f64)
                 .map(|(timestamp, _)| TriangleMarker::new((*timestamp, high_value), 5, RED_300)),
         )
@@ -1056,6 +1096,9 @@ pub fn io_bandwidth(
             "checkpoints_req",
             bgwriter_events
                 .iter()
+                .filter(
+                    |(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time
+                )
                 .map(|(_, b)| b.checkpoints_req)
                 .sum::<f64>()
         ))
@@ -1064,6 +1107,12 @@ pub fn io_bandwidth(
     let min_total = database_events
         .iter()
         .zip(bgwriter_events.iter())
+        .filter(|((timestamp_d, _), (timestamp_b, _))| {
+            *timestamp_d >= final_start_time
+                && *timestamp_d <= final_end_time
+                && *timestamp_b >= final_start_time
+                && *timestamp_b <= final_end_time
+        })
         .map(|((_, d), (_, b))| {
             d.blks_read_ps + b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps
         })
@@ -1072,6 +1121,12 @@ pub fn io_bandwidth(
     let max_total = database_events
         .iter()
         .zip(bgwriter_events.iter())
+        .filter(|((timestamp_d, _), (timestamp_b, _))| {
+            *timestamp_d >= final_start_time
+                && *timestamp_d <= final_end_time
+                && *timestamp_b >= final_start_time
+                && *timestamp_b <= final_end_time
+        })
         .map(|((_, d), (_, b))| {
             d.blks_read_ps + b.buffers_checkpoint_ps + b.buffers_clean_ps + b.buffers_backend_ps
         })
@@ -1082,6 +1137,12 @@ pub fn io_bandwidth(
             database_events
                 .iter()
                 .zip(bgwriter_events.iter())
+                .filter(|((timestamp_d, _), (timestamp_b, _))| {
+                    *timestamp_d >= final_start_time
+                        && *timestamp_d <= final_end_time
+                        && *timestamp_b >= final_start_time
+                        && *timestamp_b <= final_end_time
+                })
                 .map(|((timestamp, d), (_, b))| {
                     (
                         *timestamp,
@@ -1116,12 +1177,14 @@ pub fn io_bandwidth(
     // blocks read
     let min_read = database_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, d)| d.blks_read_ps > 0_f64)
         .map(|(_, d)| d.blks_read_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_read = database_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, d)| d.blks_read_ps > 0_f64)
         .map(|(_, d)| d.blks_read_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
@@ -1130,6 +1193,9 @@ pub fn io_bandwidth(
         .draw_series(
             database_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, d)| d.blks_read_ps > 0_f64)
                 .map(|(timestamp, d)| {
                     Circle::new((*timestamp, d.blks_read_ps * 8192_f64), 5, GREEN.filled())
@@ -1152,12 +1218,14 @@ pub fn io_bandwidth(
     // blocks written checkpointer
     let min_read = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, b)| b.buffers_checkpoint_ps > 0_f64)
         .map(|(_, b)| b.buffers_checkpoint_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_read = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, b)| b.buffers_checkpoint_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -1165,6 +1233,9 @@ pub fn io_bandwidth(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.buffers_checkpoint_ps > 0_f64)
                 .map(|(timestamp, b)| {
                     Circle::new(
@@ -1191,12 +1262,14 @@ pub fn io_bandwidth(
     // blocks written bgwriter
     let min_read = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, b)| b.buffers_clean_ps > 0_f64)
         .map(|(_, b)| b.buffers_clean_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_read = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, b)| b.buffers_clean_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -1204,6 +1277,9 @@ pub fn io_bandwidth(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.buffers_clean_ps > 0_f64)
                 .map(|(timestamp, b)| {
                     Circle::new(
@@ -1230,12 +1306,14 @@ pub fn io_bandwidth(
     // blocks written backend
     let min_read = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .filter(|(_, b)| b.buffers_backend_ps > 0_f64)
         .map(|(_, b)| b.buffers_backend_ps)
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
     let max_read = bgwriter_events
         .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
         .map(|(_, b)| b.buffers_backend_ps)
         .max_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_default();
@@ -1243,6 +1321,9 @@ pub fn io_bandwidth(
         .draw_series(
             bgwriter_events
                 .iter()
+                .filter(|(timestamp, _)| {
+                    *timestamp >= final_start_time && *timestamp <= final_end_time
+                })
                 .filter(|(_, b)| b.buffers_backend_ps > 0_f64)
                 .map(|(timestamp, b)| {
                     Circle::new(

@@ -4,6 +4,7 @@ use crate::{
     LABEL_AREA_SIZE_BOTTOM, MESH_STYLE_FONT, MESH_STYLE_FONT_SIZE,
 };
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
+use chrono::{DateTime, Local};
 use futures::executor;
 use plotters::backend::RGBPixel;
 use plotters::chart::SeriesLabelPosition::LowerRight;
@@ -16,6 +17,8 @@ pub fn show_queries(
     multi_backend: &mut [DrawingArea<BitMapBackend<RGBPixel>, Shift>],
     backend_number: usize,
     exclude_clientread: bool,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
 ) {
     #[derive(Debug)]
     struct QueryAndTotal {
@@ -23,9 +26,32 @@ pub fn show_queries(
         total: usize,
     }
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .min()
+            .unwrap_or_default()
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .max()
+            .unwrap_or_default()
+    };
+
     let mut samples_per_queryid: HashMap<i64, QueryAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
-    for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
+    for per_sample_vector in pg_stat_activity
+        .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
+        .map(|(_, v)| v)
+    {
         for r in per_sample_vector.iter().filter(|r| {
             !exclude_clientread || r.wait_event.as_deref().unwrap_or_default() != "clientread"
         }) {
@@ -124,7 +150,12 @@ pub fn show_queries(
         .unwrap();
 }
 
-pub fn show_queries_query_html(query: &str, show_clientread: String) -> String {
+pub fn show_queries_query_html(
+    query: &str,
+    show_clientread: String,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
+) -> String {
     #[derive(Debug)]
     struct QueryidAndTotal {
         queryid: i64,
@@ -133,6 +164,24 @@ pub fn show_queries_query_html(query: &str, show_clientread: String) -> String {
     let query = URL_SAFE.decode(query).unwrap();
 
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .min()
+            .unwrap_or_default()
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .max()
+            .unwrap_or_default()
+    };
     let mut samples_per_query: HashMap<String, QueryidAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
     let exclude_clientread = if show_clientread.as_str() == "Y" {
@@ -140,7 +189,11 @@ pub fn show_queries_query_html(query: &str, show_clientread: String) -> String {
     } else {
         true
     };
-    for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
+    for per_sample_vector in pg_stat_activity
+        .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
+        .map(|(_, v)| v)
+    {
         for r in per_sample_vector
             .iter()
             .filter(|r| {
@@ -226,13 +279,36 @@ pub fn show_queries_query_html(query: &str, show_clientread: String) -> String {
     html_output += "</table>";
     html_output
 }
-pub fn show_queries_queryid_html(queryid: &i64, show_clientread: String) -> String {
+pub fn show_queries_queryid_html(
+    queryid: &i64,
+    show_clientread: String,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
+) -> String {
     #[derive(Debug)]
     struct QueryidAndTotal {
         queryid: i64,
         total: usize,
     }
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .min()
+            .unwrap_or_default()
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .max()
+            .unwrap_or_default()
+    };
     let mut samples_per_query: HashMap<String, QueryidAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
     let exclude_clientread = if show_clientread.as_str() == "Y" {
@@ -240,7 +316,11 @@ pub fn show_queries_queryid_html(queryid: &i64, show_clientread: String) -> Stri
     } else {
         true
     };
-    for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
+    for per_sample_vector in pg_stat_activity
+        .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
+        .map(|(_, v)| v)
+    {
         for r in per_sample_vector
             .iter()
             .filter(|r| r.query_id.as_ref().unwrap_or(&0) == queryid)
@@ -332,13 +412,35 @@ pub fn show_queries_queryid_html(queryid: &i64, show_clientread: String) -> Stri
     html_output += "</table>";
     html_output
 }
-pub fn show_queries_html(show_clientread: String) -> String {
+pub fn show_queries_html(
+    show_clientread: String,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
+) -> String {
     #[derive(Debug)]
     struct QueryAndTotal {
         query: String,
         total: usize,
     }
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .min()
+            .unwrap_or_default()
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .max()
+            .unwrap_or_default()
+    };
     let mut samples_per_queryid: HashMap<i64, QueryAndTotal> =
         HashMap::with_capacity(pg_stat_activity.len());
     let exclude_clientread = if show_clientread.as_str() == "Y" {
@@ -346,7 +448,11 @@ pub fn show_queries_html(show_clientread: String) -> String {
     } else {
         true
     };
-    for per_sample_vector in pg_stat_activity.iter().map(|(_, v)| v) {
+    for per_sample_vector in pg_stat_activity
+        .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
+        .map(|(_, v)| v)
+    {
         for r in per_sample_vector.iter().filter(|r| {
             !exclude_clientread || r.wait_event.as_deref().unwrap_or_default() != "clientread"
         }) {
@@ -447,12 +553,35 @@ pub fn waits_by_query_id(
     queryid_filter: &bool,
     queryid: &i64,
     exclude_clientread: bool,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
 ) {
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .min()
+            .unwrap_or_default()
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .max()
+            .unwrap_or_default()
+    };
     let mut wait_event_counter: BTreeMap<String, usize> = BTreeMap::new();
     let mut queryid_waits: HashMap<i64, BTreeMap<String, usize>> =
         HashMap::with_capacity(pg_stat_activity.len());
-    for (_, per_sample_vector) in pg_stat_activity.iter() {
+    for (_, per_sample_vector) in pg_stat_activity
+        .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
+    {
         for row in per_sample_vector
             .iter()
             .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
@@ -690,12 +819,35 @@ pub fn waits_by_query_text(
     queryid_filter: &bool,
     queryid: &i64,
     exclude_clientread: bool,
+    start_time: Option<DateTime<Local>>,
+    end_time: Option<DateTime<Local>>,
 ) {
     let pg_stat_activity = executor::block_on(DATA.pg_stat_activity.read());
+    let final_start_time = if let Some(final_start_time) = start_time {
+        final_start_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .min()
+            .unwrap_or_default()
+    };
+    let final_end_time = if let Some(final_end_time) = end_time {
+        final_end_time
+    } else {
+        pg_stat_activity
+            .iter()
+            .map(|(timestamp, _)| *timestamp)
+            .max()
+            .unwrap_or_default()
+    };
     let mut wait_event_counter: BTreeMap<String, usize> = BTreeMap::new();
     let mut query_waits: HashMap<String, BTreeMap<String, usize>> =
         HashMap::with_capacity(pg_stat_activity.len());
-    for (_, per_sample_vector) in pg_stat_activity.iter() {
+    for (_, per_sample_vector) in pg_stat_activity
+        .iter()
+        .filter(|(timestamp, _)| *timestamp >= final_start_time && *timestamp <= final_end_time)
+    {
         for row in per_sample_vector
             .iter()
             .filter(|r| !*queryid_filter || r.query_id.as_ref().unwrap_or(&0) == queryid)
