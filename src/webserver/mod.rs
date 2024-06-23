@@ -125,14 +125,19 @@ pub async fn time_form() -> String {
     "#
     .to_string();
 
+    let mut minute = String::from("");
     let pg_stat_activity = DATA.pg_stat_database_sum.read().await;
     for timestamp in pg_stat_activity.iter().map(|(timestamp, _)| timestamp) {
-        form += format!(
-            r#"<option value="{}">{}</option>"#,
-            timestamp,
-            timestamp.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-        )
-        .as_str();
+        if minute != format!("{}", timestamp.format("%M")) {
+            form += format!(
+                r#"<option value="{}">{}</option>"#,
+                timestamp,
+                timestamp.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+            )
+            .as_str();
+            minute = format!("{}", timestamp.format("%M"));
+        } else {
+        };
     }
 
     form += r#"
@@ -143,12 +148,16 @@ pub async fn time_form() -> String {
     "#;
 
     for timestamp in pg_stat_activity.iter().map(|(timestamp, _)| timestamp) {
-        form += format!(
-            r#"<option value="{}">{}</option>"#,
-            timestamp,
-            timestamp.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-        )
-        .as_str();
+        if minute != format!("{}", timestamp.format("%M")) {
+            form += format!(
+                r#"<option value="{}">{}</option>"#,
+                timestamp,
+                timestamp.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+            )
+            .as_str();
+            minute = format!("{}", timestamp.format("%M"));
+        } else {
+        };
     }
     form += r#"
       <input type="submit" value="submit">
